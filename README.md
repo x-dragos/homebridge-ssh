@@ -121,6 +121,10 @@ The Homebridge UI offers a form covering hosts and accessories with conditional 
 - A failed command rolls back to the **last stable state** (Open or Closed), throws `SERVICE_COMMUNICATION_FAILURE` to HomeKit, and logs the reason. The orchestrator never wedges on a motion state.
 - When `commands.state` is configured, every `statePollIntervalMs` the parser maps stdout to a state; if it disagrees with the plugin's tracked state, the plugin reconciles and cancels stale timers.
 
+## Examples
+
+[`examples/`](examples/) contains reference scripts the plugin can invoke over SSH, including a Raspberry Pi GPIO garage-door driver that implements the state-file convention used by `commands.state`.
+
 ## Local development
 
 This codebase is developed on a Mac. Homebridge runs on Pi A; user scripts run wherever (could be the same Pi or a separate one reachable via SSH).
