@@ -7,11 +7,11 @@
   "footerDisplay": "Configuration reference: https://github.com/x-dragos/homebridge-ssh-platform#configuration",
   "schema": {
     "type": "object",
+    "required": ["name"],
     "properties": {
       "name": {
         "title": "Bridge name",
         "type": "string",
-        "required": true,
         "default": "SSH Bridge"
       },
       "logLevel": {
@@ -32,22 +32,22 @@
         "items": {
           "title": "Host",
           "type": "object",
+          "required": ["id", "ssh"],
           "properties": {
             "id": {
               "title": "Host ID",
               "description": "Stable identifier referenced by accessories (lowercase, dashes ok).",
               "type": "string",
-              "required": true,
               "pattern": "^[a-z0-9][a-z0-9-]*$"
             },
             "ssh": {
               "title": "SSH connection",
               "type": "object",
+              "required": ["host", "user", "auth"],
               "properties": {
                 "host": {
                   "title": "Hostname or IP",
-                  "type": "string",
-                  "required": true
+                  "type": "string"
                 },
                 "port": {
                   "title": "Port",
@@ -58,17 +58,16 @@
                 },
                 "user": {
                   "title": "User",
-                  "type": "string",
-                  "required": true
+                  "type": "string"
                 },
                 "auth": {
                   "title": "Authentication",
                   "type": "object",
+                  "required": ["method"],
                   "properties": {
                     "method": {
                       "title": "Method",
                       "type": "string",
-                      "required": true,
                       "default": "key",
                       "oneOf": [
                         { "title": "SSH key", "enum": ["key"] },
@@ -133,11 +132,11 @@
         "items": {
           "title": "Accessory",
           "type": "object",
+          "required": ["type", "name", "host"],
           "properties": {
             "type": {
               "title": "Type",
               "type": "string",
-              "required": true,
               "default": "switch",
               "oneOf": [
                 { "title": "Switch", "enum": ["switch"] },
@@ -146,14 +145,12 @@
             },
             "name": {
               "title": "Name",
-              "type": "string",
-              "required": true
+              "type": "string"
             },
             "host": {
               "title": "Host ID",
               "description": "Must match a host id defined above.",
-              "type": "string",
-              "required": true
+              "type": "string"
             },
             "commands": {
               "title": "Commands",
@@ -162,8 +159,9 @@
                 "on": {
                   "title": "On / open command",
                   "type": "object",
+                  "required": ["command"],
                   "properties": {
-                    "command": { "title": "Command", "type": "string", "required": true },
+                    "command": { "title": "Command", "type": "string" },
                     "timeoutMs": {
                       "title": "Timeout (ms)",
                       "type": "integer",
