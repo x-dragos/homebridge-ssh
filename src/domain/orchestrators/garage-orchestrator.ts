@@ -124,6 +124,10 @@ export class GarageOrchestrator {
     this.cancelMotionTimers();
     this.targetState = 'open';
     this.transitionTo(DoorState.Opening);
+    // Cancel any poll the transition just queued: we're about to issue an
+    // SSH command, and a concurrent poll firing during the await would race
+    // the remote script writing OPENING. Resumed by deferPollAfterCommand below.
+    this.cancelPendingPoll();
     try {
       await this.cfg.runner.run(this.cfg.openCommand);
     } catch (err) {
@@ -148,6 +152,7 @@ export class GarageOrchestrator {
     this.cancelMotionTimers();
     this.targetState = 'closed';
     this.transitionTo(DoorState.Closing);
+    this.cancelPendingPoll();
     try {
       await this.cfg.runner.run(this.cfg.closeCommand);
     } catch (err) {
@@ -159,6 +164,13 @@ export class GarageOrchestrator {
     this.scheduleSettle(DoorState.Closed, this.cfg.timing.closeTravelTimeMs, () => {
       this.lastStable = 'closed';
     });
+  }
+
+  private cancelPendingPoll(): void {
+    if (this.pollHandle) {
+      this.cfg.clock.clearTimeout(this.pollHandle);
+      this.pollHandle = null;
+    }
   }
 
   /**
