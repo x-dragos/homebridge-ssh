@@ -1,46 +1,69 @@
 {
-  "name": "homebridge-plugin-name",
-  "displayName": "Plugin Name",
+  "name": "homebridge-ssh",
+  "displayName": "Homebridge SSH",
   "type": "module",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "A short description about what your plugin does.",
-  "author": "Your Name",
+  "description": "Expose remote shell scripts as native HomeKit accessories via SSH (switches and garage door openers).",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/USERNAME/GITHUB_PROJECT_NAME#readme",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME.git"
-  },
-  "bugs": {
-    "url": "https://github.com/USERNAME/GITHUB_PROJECT_NAME/issues"
-  },
-  "keywords": [
-    "homebridge-plugin"
-  ],
-  "main": "dist/index.js",
   "engines": {
-    "node": "^18.20.4 || ^20.18.0 || ^22.10.0",
+    "node": "^20.18.0 || ^22.10.0 || ^24.0.0",
     "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
+  "main": "dist/index.js",
+  "files": [
+    "dist/",
+    "config.schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "homebridge-plugin",
+    "ssh",
+    "garage-door",
+    "switch"
+  ],
   "scripts": {
-    "build": "rimraf ./dist && tsc",
+    "build": "rimraf ./dist && tsc -p tsconfig.build.json",
     "lint": "eslint . --max-warnings=0",
-    "prepublishOnly": "npm run lint && npm run build",
-    "watch": "npm run build && npm link && nodemon"
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "prepack": "npm run verify && npm run build",
+    "watch": "npm run build && npm link && nodemon",
+    "deploy:pi": "bash bin/deploy-pi.sh",
+    "logs:pi": "bash bin/logs-pi.sh",
+    "test:ssh": "bash bin/test-ssh.sh"
   },
   "dependencies": {
-    "homebridge-lib": "^7.1.4"
+    "ssh2": "^1.15.0",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "homebridge": "^1.8.0 || ^2.0.0-beta.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
     "@types/node": "^22.13.5",
+    "@types/ssh2": "^1.15.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "eslint": "^9.21.0",
+    "eslint-config-prettier": "^9.1.0",
     "homebridge": "^2.0.0-beta.0",
     "nodemon": "^3.1.9",
+    "prettier": "^3.3.3",
     "rimraf": "^6.0.1",
+    "simple-git-hooks": "^2.11.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.24.1"
+    "typescript-eslint": "^8.24.1",
+    "vitest": "^1.6.0"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "bash bin/pre-commit.sh"
   }
 }

@@ -77,6 +77,8 @@ web_modules/
 # dotenv environment variables file
 .env
 .env.test
+.env.local
+.env.*.local
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -123,4 +125,14 @@ dist
 # Webstorm
 .idea
 
-/test/hbConfig
+# Local hbConfig files (placeholder config.json IS committed)
+test/hbConfig/config.local.json
+test/hbConfig/auth.json
+test/hbConfig/persist
+test/hbConfig/accessories
+
+# Per-developer VS Code overrides
+.vscode/*.local.json
+
+# AI assistant working artifacts (local-only)
+/docs/superpowers

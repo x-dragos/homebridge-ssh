@@ -1,0 +1,7 @@
+dist
+node_modules
+docs/superpowers
+*.tgz
+package-lock.json
+.github
+test/hbConfig

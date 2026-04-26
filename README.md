@@ -14,6 +14,7 @@
 > **Homebridge v2.0 Information**
 >
 > This template currently has a
+>
 > - `package.json -> engines.homebridge` value of `"^1.8.0 || ^2.0.0-beta.0"`
 > - `package.json -> devDependencies.homebridge` value of `"^2.0.0-beta.0"`
 >
@@ -29,7 +30,7 @@ This template should be used in conjunction with the [developer documentation](h
 
 ### Clone As Template
 
-Click the link below to create a new GitHub Repository using this template, or click the *Use This Template* button above.
+Click the link below to create a new GitHub Repository using this template, or click the _Use This Template_ button above.
 
 <span align="center">
 
@@ -101,6 +102,7 @@ homebridge -D
 ### Watch For Changes and Build Automatically
 
 If you want to have your code compile automatically as you make changes, and restart Homebridge automatically between changes, you first need to add your plugin as a platform in `./test/hbConfig/config.json`:
+
 ```
 {
 ...
@@ -168,7 +170,7 @@ If you are publishing a scoped plugin, i.e. `@username/homebridge-xxx` you will 
 
 #### Publishing Beta Versions
 
-You can publish *beta* versions of your plugin for other users to test before you release it to everyone.
+You can publish _beta_ versions of your plugin for other users to test before you release it to everyone.
 
 ```shell
 # create a new pre-release version (eg. 2.1.0-beta.1)
@@ -178,7 +180,7 @@ npm version prepatch --preid beta
 npm publish --tag beta
 ```
 
-Users can then install the  *beta* version by appending `@beta` to the install command, for example:
+Users can then install the _beta_ version by appending `@beta` to the install command, for example:
 
 ```shell
 sudo npm install -g homebridge-example-plugin@beta
