@@ -369,12 +369,13 @@
           <div class="mb-3">
             <label class="form-label">Auto-close mode</label>
             <select class="form-select field-autoclose-mode">
-              <option value="execute">Plugin runs the close command</option>
-              <option value="simulated">Hardware closes itself (state-only)</option>
+              <option value="execute">Plugin closes the door</option>
+              <option value="simulated">Door closes itself</option>
             </select>
             <div class="form-text">
-              Use "Plugin runs the close command" if your gate doesn't auto-close on its own. Use "Hardware closes
-              itself" if your gate or remote script physically auto-closes — the plugin will only mirror state.
+              Choose who actually closes the door after the auto-close timeout. "Plugin closes the door" runs the close
+              command. "Door closes itself" only mirrors the closing state in HomeKit while the door handles the close
+              on its own.
             </div>
           </div>
         </div>
@@ -383,19 +384,19 @@
           <input class="form-control field-state-poll-interval" type="number" placeholder="0" />
         </div>
         <div class="mt-3 state-cmd-dependent d-none">
-          <label class="form-label">Transient poll interval (ms, 0 = use state poll interval)</label>
+          <label class="form-label">Transient status interval (ms, 0 = use status check interval)</label>
           <input class="form-control field-transient-poll-interval" type="number" placeholder="1000" />
           <div class="form-text">
-            Faster cadence used only while the gate is Opening or Closing — HomeKit sees real progress without spamming
-            SSH while the gate is parked.
+            How often to check the door's status while it is opening or closing. A short interval shows fresh progress
+            in HomeKit without keeping the connection busy while the door is parked.
           </div>
         </div>
         <div class="mt-3 state-cmd-dependent d-none">
-          <label class="form-label">Post-command poll delay (ms)</label>
+          <label class="form-label">Post-command status delay (ms)</label>
           <input class="form-control field-post-command-poll-delay" type="number" placeholder="5000" />
           <div class="form-text">
-            Grace period after issuing an open or close command before the next state poll fires. Avoids racing the
-            remote script's state-file write.
+            Wait this long after an open or close command before checking the door's status again. Gives the door a
+            moment to report its new state.
           </div>
         </div>
       </div>
