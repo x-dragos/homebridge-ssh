@@ -9,6 +9,7 @@ import type {
 } from 'homebridge';
 
 import { HomebridgeLogger, type LogLevel } from './adapters/homebridge-logger.js';
+import { HomebridgeGarageAccessory } from './adapters/homebridge/garage-accessory.js';
 import { HomebridgeSwitchAccessory } from './adapters/homebridge/switch-accessory.js';
 import { SshConnectionPool } from './adapters/ssh/ssh-connection-pool.js';
 import { SystemClock } from './adapters/system-clock.js';
@@ -129,8 +130,12 @@ export class HomebridgeSshPlatform implements DynamicPlatformPlugin {
       new HomebridgeSwitchAccessory(this, accessory, config, runner, this.clock, childLogger);
       return;
     }
+    if (config.type === 'garageDoor') {
+      new HomebridgeGarageAccessory(this, accessory, config, runner, this.clock, childLogger);
+      return;
+    }
     // Routed through the F-12 cleanup path: an unimplemented type must NOT survive
     // the orphan sweep as a ghost accessory in HomeKit.
-    throw new Error(`accessory type "${config.type}" is not yet implemented`);
+    throw new Error(`accessory type "${(config as { type: string }).type}" is not yet implemented`);
   }
 }

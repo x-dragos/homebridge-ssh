@@ -329,10 +329,24 @@
                 },
                 "autoCloseTimeoutMs": {
                   "title": "Auto-close timeout (ms, 0 = disabled)",
+                  "description": "After the gate settles to OPEN, close it again after this many milliseconds. 0 disables.",
                   "type": "integer",
                   "default": 0,
                   "minimum": 0,
                   "maximum": 86400000
+                },
+                "autoCloseMode": {
+                  "title": "Auto-close mode",
+                  "description": "Plugin runs the close command (use when the gate hardware does NOT auto-close on its own); or plugin only updates state (use when the gate hardware/remote script physically auto-closes — the plugin keeps HomeKit's view in sync).",
+                  "type": "string",
+                  "default": "execute",
+                  "oneOf": [
+                    { "title": "Plugin runs close command", "enum": ["execute"] },
+                    { "title": "Hardware closes itself (state-only)", "enum": ["simulated"] }
+                  ],
+                  "condition": {
+                    "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].timing && model.accessories[arrayIndices[0]].timing.autoCloseTimeoutMs > 0;"
+                  }
                 },
                 "statePollIntervalMs": {
                   "title": "State poll interval (ms, 0 = disabled)",

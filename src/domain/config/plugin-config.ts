@@ -60,7 +60,16 @@ const garageStateMappingSchema = z.object({
 const garageTimingSchema = z.object({
   openTravelTimeMs: z.number().int().min(0).max(120_000).default(0),
   closeTravelTimeMs: z.number().int().min(0).max(120_000).default(0),
+  /** 0 disables auto-close. >0 enables; `autoCloseMode` decides who fires it. */
   autoCloseTimeoutMs: z.number().int().min(0).max(86_400_000).default(0),
+  /**
+   * 'execute' (default): the plugin runs the close command after autoCloseTimeoutMs.
+   *   Use when the gate hardware does NOT auto-close on its own.
+   * 'simulated': the plugin only tracks the state transition (Open→Closing→Closed)
+   *   without running any command. Use when the gate hardware (or a remote script)
+   *   physically auto-closes — the plugin just keeps HomeKit's view in sync.
+   */
+  autoCloseMode: z.enum(['execute', 'simulated']).default('execute'),
   statePollIntervalMs: z.number().int().min(0).max(3_600_000).default(0),
 });
 
