@@ -178,6 +178,8 @@
         if (sp !== undefined) timing.statePollIntervalMs = sp;
         const tp = asInt(a.timing.transientPollIntervalMs);
         if (tp !== undefined) timing.transientPollIntervalMs = tp;
+        const pcd = asInt(a.timing.postCommandPollDelayMs);
+        if (pcd !== undefined) timing.postCommandPollDelayMs = pcd;
       }
       if (Object.keys(timing).length > 0) out.timing = timing;
     }
@@ -249,6 +251,7 @@
         autoCloseMode: 'execute',
         statePollIntervalMs: '',
         transientPollIntervalMs: '',
+        postCommandPollDelayMs: '',
       },
     };
     const cmds = b.commands || {};
@@ -286,6 +289,7 @@
       a.timing.autoCloseMode = b.timing.autoCloseMode || 'execute';
       a.timing.statePollIntervalMs = b.timing.statePollIntervalMs ?? '';
       a.timing.transientPollIntervalMs = b.timing.transientPollIntervalMs ?? '';
+      a.timing.postCommandPollDelayMs = b.timing.postCommandPollDelayMs ?? '';
       if (b.timing.autoCloseTimeoutMs && b.timing.autoCloseTimeoutMs > 0) a.hasAutoClose = true;
     }
     return a;
@@ -571,6 +575,7 @@
     bindTiming('.field-autoclose-timeout', 'autoCloseTimeoutMs');
     bindTiming('.field-state-poll-interval', 'statePollIntervalMs');
     bindTiming('.field-transient-poll-interval', 'transientPollIntervalMs');
+    bindTiming('.field-post-command-poll-delay', 'postCommandPollDelayMs');
     const autoCloseModeSelect = $('.field-autoclose-mode', card);
     autoCloseModeSelect.value = a.timing.autoCloseMode;
     autoCloseModeSelect.addEventListener('change', () => {

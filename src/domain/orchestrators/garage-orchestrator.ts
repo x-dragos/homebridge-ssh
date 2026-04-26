@@ -22,6 +22,14 @@ export interface GarageTiming {
    * Lets HomeKit see real progress without spamming SSH while the door is parked.
    */
   readonly transientPollIntervalMs?: number;
+  /**
+   * Grace period to wait after issuing an open/close command before the next state
+   * poll fires. Prevents the poll from racing the remote script: a freshly-issued
+   * open hasn't had time to write OPENING to the state file yet, and an early poll
+   * would read the previous CLOSED value and incorrectly drift the orchestrator
+   * back. 0 = no grace, fall back to the regular cadence. Default: 5000ms.
+   */
+  readonly postCommandPollDelayMs?: number;
 }
 
 export interface GarageOrchestratorConfig {
@@ -123,6 +131,7 @@ export class GarageOrchestrator {
       this.rollbackToLastStable();
       throw err;
     }
+    this.deferPollAfterCommand();
     this.scheduleSettle(DoorState.Open, this.cfg.timing.openTravelTimeMs, () => {
       this.lastStable = 'open';
       if (this.cfg.timing.autoCloseTimeoutMs > 0) {
@@ -146,9 +155,37 @@ export class GarageOrchestrator {
       this.rollbackToLastStable();
       throw err;
     }
+    this.deferPollAfterCommand();
     this.scheduleSettle(DoorState.Closed, this.cfg.timing.closeTravelTimeMs, () => {
       this.lastStable = 'closed';
     });
+  }
+
+  /**
+   * Push the next state poll out by `postCommandPollDelayMs`. Called right after
+   * a successful open/close exec so the immediate transient poll cadence doesn't
+   * race the remote script writing the new state to its state file.
+   */
+  private deferPollAfterCommand(): void {
+    if (this.stopped) {
+      return;
+    }
+    if (!this.cfg.stateCommand || !this.cfg.stateParser) {
+      return;
+    }
+    const delay = this.cfg.timing.postCommandPollDelayMs ?? 5000;
+    if (this.pollHandle) {
+      this.cfg.clock.clearTimeout(this.pollHandle);
+      this.pollHandle = null;
+    }
+    if (delay <= 0) {
+      this.scheduleNextPoll();
+      return;
+    }
+    this.pollHandle = this.cfg.clock.setTimeout(() => {
+      this.pollHandle = null;
+      void this.pollOnce().finally(() => this.scheduleNextPoll());
+    }, delay);
   }
 
   private rollbackToLastStable(): void {

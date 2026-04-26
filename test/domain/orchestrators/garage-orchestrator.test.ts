@@ -407,6 +407,9 @@ describe('GarageOrchestrator — transient-state fast polling', () => {
         autoCloseMode: 'execute',
         statePollIntervalMs: 30000,
         transientPollIntervalMs: 1000,
+        // Disable the post-command grace so this test exercises the cadence in
+        // isolation; the post-command delay has its own dedicated test below.
+        postCommandPollDelayMs: 0,
       },
       initialState: DoorState.Closed,
     });
@@ -445,6 +448,52 @@ describe('GarageOrchestrator — transient-state fast polling', () => {
     clock.advance(5000);
     await new Promise((r) => setImmediate(r));
     expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(stateAtOpen);
+
+    o.stop();
+  });
+
+  it('postCommandPollDelayMs delays the first transient poll after a command runs', async () => {
+    const o = new GarageOrchestrator({
+      runner,
+      clock,
+      logger,
+      onChange: () => {},
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 20000,
+        closeTravelTimeMs: 20000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 30000,
+        transientPollIntervalMs: 1000,
+        postCommandPollDelayMs: 5000,
+      },
+      initialState: DoorState.Closed,
+    });
+    runner.setDefault('state', ok({ stdout: 'CLOSED\n' }));
+    o.start();
+    await new Promise((r) => setImmediate(r));
+    const stateBefore = runner.invocations.filter((i) => i.command === 'state').length;
+
+    await o.setTarget('open');
+    expect(o.current()).toBe(DoorState.Opening);
+
+    // Even though transientPollIntervalMs is 1000ms, no poll fires within the first
+    // 4 seconds because the 5-second post-command grace defers it.
+    clock.advance(4000);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(stateBefore);
+
+    // Past the 5-second grace, the poll fires.
+    clock.advance(1500);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBeGreaterThan(stateBefore);
 
     o.stop();
   });

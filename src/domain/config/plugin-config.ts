@@ -78,6 +78,12 @@ const garageTimingSchema = z.object({
    * spamming SSH while the door is parked.
    */
   transientPollIntervalMs: z.number().int().min(0).max(60_000).default(1000),
+  /**
+   * Grace period after issuing an open or close command before the next state
+   * poll fires. Prevents the fast transient poll from racing the remote script's
+   * state-file write. Default 5000ms.
+   */
+  postCommandPollDelayMs: z.number().int().min(0).max(60_000).default(5000),
 });
 
 const garageDoorAccessorySchema = z

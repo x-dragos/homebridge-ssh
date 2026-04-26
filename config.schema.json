@@ -366,6 +366,14 @@
                   "placeholder": 1000,
                   "minimum": 0,
                   "maximum": 60000
+                },
+                "postCommandPollDelayMs": {
+                  "title": "Post-command poll delay (ms)",
+                  "description": "Grace period after issuing an open or close command before the next state poll fires. Avoids racing the remote script's state-file write. 0 disables the grace.",
+                  "type": "integer",
+                  "placeholder": 5000,
+                  "minimum": 0,
+                  "maximum": 60000
                 }
               }
             }
