@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-`homebridge-ssh` — a Homebridge dynamic platform plugin that exposes remote shell scripts (run over SSH) as native HomeKit accessories. v1 supports `switch` and `garageDoor` accessory types. Spec: `docs/superpowers/specs/2026-04-26-homebridge-ssh-design.md` (gitignored). Implementation plan: `docs/superpowers/plans/` (gitignored).
+`homebridge-ssh-platform` (npm) / `homebridge-ssh` (GitHub repo) — a Homebridge dynamic platform plugin that exposes remote shell scripts (run over SSH) as native HomeKit accessories. v1 supports `switch` and `garageDoor` accessory types. Spec: `docs/superpowers/specs/2026-04-26-homebridge-ssh-design.md` (gitignored). Implementation plan: `docs/superpowers/plans/` (gitignored).
 
 ## Homebridge Verified Plugin rules — MUST follow
 

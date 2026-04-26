@@ -1,18 +1,18 @@
 {
-  "name": "homebridge-ssh",
+  "name": "homebridge-ssh-platform",
   "displayName": "Homebridge SSH",
   "type": "module",
   "version": "0.1.0",
   "description": "Expose remote shell scripts as native HomeKit accessories via SSH (switches and garage door openers).",
   "author": "Dragos Burciu",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/x-dragos/homebridge-ssh#readme",
+  "homepage": "https://github.com/x-dragos/homebridge-ssh-platform#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/x-dragos/homebridge-ssh.git"
+    "url": "git+https://github.com/x-dragos/homebridge-ssh-platform.git"
   },
   "bugs": {
-    "url": "https://github.com/x-dragos/homebridge-ssh/issues"
+    "url": "https://github.com/x-dragos/homebridge-ssh-platform/issues"
   },
   "engines": {
     "node": "^20.18.0 || ^22.10.0 || ^24.0.0",

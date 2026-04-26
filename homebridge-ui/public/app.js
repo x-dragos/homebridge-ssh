@@ -1,7 +1,7 @@
 /* eslint-env browser */
 /* global homebridge */
 //
-// homebridge-ssh custom UI controller. Vanilla JS, Bootstrap 5 classes from the host UI.
+// homebridge-ssh-platform custom UI controller. Vanilla JS, Bootstrap 5 classes from the host UI.
 //
 // Single in-memory model {name, logLevel, hosts:[], accessories:[]} drives the rendering;
 // every input mutates the model, and a debounced updatePluginConfig syncs to Homebridge.

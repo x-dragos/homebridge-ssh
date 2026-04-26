@@ -4,7 +4,7 @@
   "singular": true,
   "customUi": true,
   "headerDisplay": "Exposes remote shell scripts (run over SSH) as native HomeKit accessories.",
-  "footerDisplay": "Configuration reference: https://github.com/x-dragos/homebridge-ssh#configuration",
+  "footerDisplay": "Configuration reference: https://github.com/x-dragos/homebridge-ssh-platform#configuration",
   "schema": {
     "type": "object",
     "properties": {

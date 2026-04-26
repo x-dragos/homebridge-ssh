@@ -1,4 +1,4 @@
-// homebridge-ssh custom plugin UI server.
+// homebridge-ssh-platform custom plugin UI server.
 // Spawned as a child process when the settings modal opens; killed when it closes.
 // Exposes `/test-connection` and `/test-command` endpoints used by public/index.html.
 //

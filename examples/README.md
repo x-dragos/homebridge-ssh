@@ -1,6 +1,6 @@
 # Examples
 
-Reference implementations of the remote scripts that `homebridge-ssh` invokes over SSH. They are not bundled with the npm tarball — copy whichever fits your installation onto the remote host and adapt it.
+Reference implementations of the remote scripts that `homebridge-ssh-platform` invokes over SSH. They are not bundled with the npm tarball — copy whichever fits your installation onto the remote host and adapt it.
 
 ## Garage door — Raspberry Pi GPIO
 

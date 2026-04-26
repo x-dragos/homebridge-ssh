@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reference implementation of a homebridge-ssh garage-door driver.
+"""Reference implementation of a homebridge-ssh-platform garage-door driver.
 
 A two-relay GPIO opener that pulses one relay for "open" and another for "close".
 Mirrors the door's state in /tmp/<DEVICE_NAME>.state so the plugin's `commands.state`

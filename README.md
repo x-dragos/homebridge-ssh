@@ -1,4 +1,4 @@
-# homebridge-ssh
+# homebridge-ssh-platform
 
 Expose remote shell scripts as native HomeKit accessories via SSH. Built as a Homebridge dynamic platform plugin.
 
@@ -17,7 +17,7 @@ Expose remote shell scripts as native HomeKit accessories via SSH. Built as a Ho
 ## Installation
 
 ```bash
-sudo npm install -g homebridge-ssh
+sudo npm install -g homebridge-ssh-platform
 ```
 
 Or install via the Homebridge UI plugin browser.
@@ -137,8 +137,8 @@ This codebase is developed on a Mac. Homebridge runs on Pi A; user scripts run w
 ### First-time setup
 
 ```bash
-git clone <repo>
-cd homebridge-ssh
+git clone https://github.com/x-dragos/homebridge-ssh-platform.git
+cd homebridge-ssh-platform
 npm install
 npx simple-git-hooks                    # install the pre-commit secret-scan hook
 cp .env.example .env.local              # then edit with your PI_HOST, etc.

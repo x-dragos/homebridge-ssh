@@ -21,7 +21,7 @@ scp -q "$TARBALL" "$PI_HOST:/tmp/"
 
 REMOTE_RESTART_CMD=${PI_RESTART_CMD:-}
 TARBALL_BASENAME=$(basename "$TARBALL")
-PLUGIN_NAME="homebridge-ssh"
+PLUGIN_NAME="homebridge-ssh-platform"
 
 echo "[deploy] installing and restarting on $PI_HOST..."
 ssh "$PI_HOST" \
