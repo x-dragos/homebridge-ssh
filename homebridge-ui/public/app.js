@@ -649,8 +649,14 @@
       const summary = `exit ${result.exitCode} in ${result.durationMs}ms`;
       const body =
         result.exitCode === 0 ? result.stdout || '(no stdout)' : result.stderr || result.stdout || '(no output)';
-      const fn = result.exitCode === 0 ? homebridge.toast.success : homebridge.toast.warning;
-      fn(`${summary}\n${body}`, group);
+      // Call directly on `homebridge.toast` so the method retains its `this`
+      // binding — extracting it into a variable strips the binding and the
+      // toast helper fails at `this._postMessage`.
+      if (result.exitCode === 0) {
+        homebridge.toast.success(`${summary}\n${body}`, group);
+      } else {
+        homebridge.toast.warning(`${summary}\n${body}`, group);
+      }
     } catch (err) {
       homebridge.toast.error(err.message || 'command failed', group);
     } finally {
