@@ -1,16 +1,350 @@
 {
-  "pluginAlias": "ExampleHomebridgePlugin",
+  "pluginAlias": "HomebridgeSsh",
   "pluginType": "platform",
   "singular": true,
-  "strictValidation": false,
+  "headerDisplay": "Exposes remote shell scripts (run over SSH) as native HomeKit accessories.",
   "schema": {
     "type": "object",
     "properties": {
       "name": {
-        "title": "Name",
+        "title": "Bridge name",
         "type": "string",
         "required": true,
-        "default": "Example Dynamic Platform"
+        "default": "SSH Bridge"
+      },
+      "logLevel": {
+        "title": "Log level",
+        "type": "string",
+        "default": "info",
+        "oneOf": [
+          { "title": "Debug", "enum": ["debug"] },
+          { "title": "Info", "enum": ["info"] },
+          { "title": "Warn", "enum": ["warn"] },
+          { "title": "Error", "enum": ["error"] }
+        ]
+      },
+      "hosts": {
+        "title": "Hosts",
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "title": "Host",
+          "type": "object",
+          "properties": {
+            "id": {
+              "title": "Host ID",
+              "description": "Stable identifier referenced by accessories (lowercase, dashes ok).",
+              "type": "string",
+              "required": true,
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            },
+            "ssh": {
+              "title": "SSH connection",
+              "type": "object",
+              "properties": {
+                "host": {
+                  "title": "Hostname or IP",
+                  "type": "string",
+                  "required": true
+                },
+                "port": {
+                  "title": "Port",
+                  "type": "integer",
+                  "default": 22,
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "user": {
+                  "title": "User",
+                  "type": "string",
+                  "required": true
+                },
+                "auth": {
+                  "title": "Authentication",
+                  "type": "object",
+                  "properties": {
+                    "method": {
+                      "title": "Method",
+                      "type": "string",
+                      "required": true,
+                      "default": "key",
+                      "oneOf": [
+                        { "title": "SSH key", "enum": ["key"] },
+                        { "title": "Password", "enum": ["password"] },
+                        { "title": "SSH agent", "enum": ["agent"] }
+                      ]
+                    },
+                    "privateKeyPath": {
+                      "title": "Private key path",
+                      "type": "string",
+                      "condition": {
+                        "functionBody": "return model.hosts && model.hosts[arrayIndices[0]] && model.hosts[arrayIndices[0]].ssh && model.hosts[arrayIndices[0]].ssh.auth && model.hosts[arrayIndices[0]].ssh.auth.method === 'key';"
+                      }
+                    },
+                    "passphrase": {
+                      "title": "Passphrase (if key is encrypted)",
+                      "type": "string",
+                      "condition": {
+                        "functionBody": "return model.hosts && model.hosts[arrayIndices[0]] && model.hosts[arrayIndices[0]].ssh && model.hosts[arrayIndices[0]].ssh.auth && model.hosts[arrayIndices[0]].ssh.auth.method === 'key';"
+                      }
+                    },
+                    "password": {
+                      "title": "Password",
+                      "type": "string",
+                      "condition": {
+                        "functionBody": "return model.hosts && model.hosts[arrayIndices[0]] && model.hosts[arrayIndices[0]].ssh && model.hosts[arrayIndices[0]].ssh.auth && model.hosts[arrayIndices[0]].ssh.auth.method === 'password';"
+                      }
+                    }
+                  }
+                },
+                "connectTimeoutMs": {
+                  "title": "Connect timeout (ms)",
+                  "type": "integer",
+                  "default": 10000,
+                  "minimum": 1,
+                  "maximum": 60000
+                },
+                "keepaliveIntervalMs": {
+                  "title": "Keepalive interval (ms)",
+                  "type": "integer",
+                  "default": 30000,
+                  "minimum": 0,
+                  "maximum": 300000
+                },
+                "idleDisconnectMs": {
+                  "title": "Idle disconnect (ms, 0 = never)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 86400000
+                }
+              }
+            }
+          }
+        }
+      },
+      "accessories": {
+        "title": "Accessories",
+        "type": "array",
+        "items": {
+          "title": "Accessory",
+          "type": "object",
+          "properties": {
+            "type": {
+              "title": "Type",
+              "type": "string",
+              "required": true,
+              "default": "switch",
+              "oneOf": [
+                { "title": "Switch", "enum": ["switch"] },
+                { "title": "Garage door", "enum": ["garageDoor"] }
+              ]
+            },
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "required": true
+            },
+            "host": {
+              "title": "Host ID",
+              "description": "Must match a host id defined above.",
+              "type": "string",
+              "required": true
+            },
+            "commands": {
+              "title": "Commands",
+              "type": "object",
+              "properties": {
+                "on": {
+                  "title": "On / open command",
+                  "type": "object",
+                  "properties": {
+                    "command": { "title": "Command", "type": "string", "required": true },
+                    "timeoutMs": {
+                      "title": "Timeout (ms)",
+                      "type": "integer",
+                      "default": 5000,
+                      "minimum": 1,
+                      "maximum": 120000
+                    }
+                  }
+                },
+                "off": {
+                  "title": "Off / close command",
+                  "type": "object",
+                  "properties": {
+                    "command": { "title": "Command", "type": "string" },
+                    "timeoutMs": {
+                      "title": "Timeout (ms)",
+                      "type": "integer",
+                      "default": 5000,
+                      "minimum": 1,
+                      "maximum": 120000
+                    }
+                  }
+                },
+                "state": {
+                  "title": "State command (optional)",
+                  "type": "object",
+                  "properties": {
+                    "command": { "title": "Command", "type": "string" },
+                    "timeoutMs": {
+                      "title": "Timeout (ms)",
+                      "type": "integer",
+                      "default": 3000,
+                      "minimum": 1,
+                      "maximum": 120000
+                    }
+                  }
+                }
+              }
+            },
+            "behavior": {
+              "title": "Switch behavior",
+              "type": "object",
+              "condition": {
+                "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].type === 'switch';"
+              },
+              "properties": {
+                "mode": {
+                  "title": "Mode",
+                  "type": "string",
+                  "default": "stateful",
+                  "oneOf": [
+                    { "title": "Stateful (on/off persists)", "enum": ["stateful"] },
+                    { "title": "Momentary (auto-reset)", "enum": ["momentary"] }
+                  ]
+                },
+                "autoResetMs": {
+                  "title": "Auto-reset delay (ms)",
+                  "type": "integer",
+                  "default": 1000,
+                  "minimum": 50,
+                  "maximum": 60000,
+                  "condition": {
+                    "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].behavior && model.accessories[arrayIndices[0]].behavior.mode === 'momentary';"
+                  }
+                }
+              }
+            },
+            "state": {
+              "title": "State polling (switch, optional)",
+              "type": "object",
+              "condition": {
+                "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].type === 'switch';"
+              },
+              "properties": {
+                "command": {
+                  "type": "object",
+                  "properties": {
+                    "command": { "title": "Command", "type": "string" },
+                    "timeoutMs": {
+                      "title": "Timeout (ms)",
+                      "type": "integer",
+                      "default": 3000,
+                      "minimum": 1,
+                      "maximum": 120000
+                    }
+                  }
+                },
+                "onValue": { "title": "On value", "type": "string" },
+                "matchMode": {
+                  "title": "Match mode",
+                  "type": "string",
+                  "default": "exact",
+                  "oneOf": [
+                    { "title": "Exact", "enum": ["exact"] },
+                    { "title": "Contains", "enum": ["contains"] },
+                    { "title": "Regex", "enum": ["regex"] }
+                  ]
+                },
+                "pollIntervalMs": {
+                  "title": "Poll interval (ms, 0 = no polling)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 3600000
+                }
+              }
+            },
+            "stateMapping": {
+              "title": "Garage state mapping",
+              "type": "object",
+              "condition": {
+                "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].type === 'garageDoor';"
+              },
+              "properties": {
+                "open": {
+                  "type": "object",
+                  "properties": {
+                    "match": { "title": "Match", "type": "string" },
+                    "mode": {
+                      "title": "Mode",
+                      "type": "string",
+                      "oneOf": [
+                        { "title": "Exact", "enum": ["exact"] },
+                        { "title": "Contains", "enum": ["contains"] },
+                        { "title": "Regex", "enum": ["regex"] }
+                      ]
+                    }
+                  }
+                },
+                "closed": {
+                  "type": "object",
+                  "properties": {
+                    "match": { "title": "Match", "type": "string" },
+                    "mode": {
+                      "title": "Mode",
+                      "type": "string",
+                      "oneOf": [
+                        { "title": "Exact", "enum": ["exact"] },
+                        { "title": "Contains", "enum": ["contains"] },
+                        { "title": "Regex", "enum": ["regex"] }
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "timing": {
+              "title": "Garage timing",
+              "type": "object",
+              "condition": {
+                "functionBody": "return model.accessories && model.accessories[arrayIndices[0]] && model.accessories[arrayIndices[0]].type === 'garageDoor';"
+              },
+              "properties": {
+                "openTravelTimeMs": {
+                  "title": "Open travel time (ms)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 120000
+                },
+                "closeTravelTimeMs": {
+                  "title": "Close travel time (ms)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 120000
+                },
+                "autoCloseTimeoutMs": {
+                  "title": "Auto-close timeout (ms, 0 = disabled)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 86400000
+                },
+                "statePollIntervalMs": {
+                  "title": "State poll interval (ms, 0 = disabled)",
+                  "type": "integer",
+                  "default": 0,
+                  "minimum": 0,
+                  "maximum": 3600000
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

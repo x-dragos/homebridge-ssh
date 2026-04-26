@@ -73,7 +73,10 @@ export class HomebridgeLogger implements Logger {
     const formatted = formatMessage(this.prefixes, message, merged);
     switch (level) {
       case 'debug':
-        this.hb.debug(formatted);
+        // Homebridge's `log.debug` is silenced unless Homebridge itself runs in debug mode.
+        // Since the user explicitly set this plugin's logLevel to 'debug', promote to info
+        // (with a tag) so the messages actually appear without requiring -D globally.
+        this.hb.info(`[debug] ${formatted}`);
         break;
       case 'info':
         this.hb.info(formatted);
