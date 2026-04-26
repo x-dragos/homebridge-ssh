@@ -2,7 +2,9 @@
   "pluginAlias": "HomebridgeSsh",
   "pluginType": "platform",
   "singular": true,
+  "customUi": true,
   "headerDisplay": "Exposes remote shell scripts (run over SSH) as native HomeKit accessories.",
+  "footerDisplay": "Configuration reference: https://github.com/x-dragos/homebridge-ssh#configuration",
   "schema": {
     "type": "object",
     "properties": {
@@ -84,6 +86,7 @@
                     "passphrase": {
                       "title": "Passphrase (if key is encrypted)",
                       "type": "string",
+                      "format": "password",
                       "condition": {
                         "functionBody": "return model.hosts && model.hosts[arrayIndices[0]] && model.hosts[arrayIndices[0]].ssh && model.hosts[arrayIndices[0]].ssh.auth && model.hosts[arrayIndices[0]].ssh.auth.method === 'key';"
                       }
@@ -91,6 +94,7 @@
                     "password": {
                       "title": "Password",
                       "type": "string",
+                      "format": "password",
                       "condition": {
                         "functionBody": "return model.hosts && model.hosts[arrayIndices[0]] && model.hosts[arrayIndices[0]].ssh && model.hosts[arrayIndices[0]].ssh.auth && model.hosts[arrayIndices[0]].ssh.auth.method === 'password';"
                       }
@@ -100,21 +104,21 @@
                 "connectTimeoutMs": {
                   "title": "Connect timeout (ms)",
                   "type": "integer",
-                  "default": 10000,
+                  "placeholder": 10000,
                   "minimum": 1,
                   "maximum": 60000
                 },
                 "keepaliveIntervalMs": {
                   "title": "Keepalive interval (ms)",
                   "type": "integer",
-                  "default": 30000,
+                  "placeholder": 30000,
                   "minimum": 0,
                   "maximum": 300000
                 },
                 "idleDisconnectMs": {
                   "title": "Idle disconnect (ms, 0 = never)",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 86400000
                 }
@@ -163,7 +167,7 @@
                     "timeoutMs": {
                       "title": "Timeout (ms)",
                       "type": "integer",
-                      "default": 5000,
+                      "placeholder": 5000,
                       "minimum": 1,
                       "maximum": 120000
                     }
@@ -177,7 +181,7 @@
                     "timeoutMs": {
                       "title": "Timeout (ms)",
                       "type": "integer",
-                      "default": 5000,
+                      "placeholder": 5000,
                       "minimum": 1,
                       "maximum": 120000
                     }
@@ -191,7 +195,7 @@
                     "timeoutMs": {
                       "title": "Timeout (ms)",
                       "type": "integer",
-                      "default": 3000,
+                      "placeholder": 3000,
                       "minimum": 1,
                       "maximum": 120000
                     }
@@ -218,7 +222,7 @@
                 "autoResetMs": {
                   "title": "Auto-reset delay (ms)",
                   "type": "integer",
-                  "default": 1000,
+                  "placeholder": 1000,
                   "minimum": 50,
                   "maximum": 60000,
                   "condition": {
@@ -241,7 +245,7 @@
                     "timeoutMs": {
                       "title": "Timeout (ms)",
                       "type": "integer",
-                      "default": 3000,
+                      "placeholder": 3000,
                       "minimum": 1,
                       "maximum": 120000
                     }
@@ -261,7 +265,7 @@
                 "pollIntervalMs": {
                   "title": "Poll interval (ms, 0 = no polling)",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 3600000
                 }
@@ -316,14 +320,14 @@
                 "openTravelTimeMs": {
                   "title": "Open travel time (ms)",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 120000
                 },
                 "closeTravelTimeMs": {
                   "title": "Close travel time (ms)",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 120000
                 },
@@ -331,7 +335,7 @@
                   "title": "Auto-close timeout (ms, 0 = disabled)",
                   "description": "After the gate settles to OPEN, close it again after this many milliseconds. 0 disables.",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 86400000
                 },
@@ -351,9 +355,17 @@
                 "statePollIntervalMs": {
                   "title": "State poll interval (ms, 0 = disabled)",
                   "type": "integer",
-                  "default": 0,
+                  "placeholder": 0,
                   "minimum": 0,
                   "maximum": 3600000
+                },
+                "transientPollIntervalMs": {
+                  "title": "Transient poll interval (ms, 0 = use state poll interval)",
+                  "description": "Faster poll cadence used while the gate is Opening or Closing, so HomeKit sees real progress without spamming SSH while the gate is parked. 0 disables the fast cadence.",
+                  "type": "integer",
+                  "placeholder": 1000,
+                  "minimum": 0,
+                  "maximum": 60000
                 }
               }
             }

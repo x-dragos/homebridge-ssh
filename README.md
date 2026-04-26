@@ -1,217 +1,146 @@
-<p align="center">
+# homebridge-ssh
 
-<img src="https://github.com/homebridge/branding/raw/latest/logos/homebridge-wordmark-logo-vertical.png" width="150">
+Expose remote shell scripts as native HomeKit accessories via SSH. Built as a Homebridge dynamic platform plugin.
 
-</p>
+## Features
 
-<span align="center">
+- **Switch accessories** (`Service.Switch`) — stateful or momentary auto-reset modes; optional state polling.
+- **Garage door accessories** (`Service.GarageDoorOpener`) — synthetic state machine driven by configurable travel times; optional auto-close (plugin-driven or hardware-mirrored); optional state command for drift correction.
+- **Multiple hosts** — one persistent SSH connection per host, lazy connect, optional idle disconnect.
+- **Three auth methods** — private key (preferred), `ssh-agent`, or password (logged as a startup warning).
 
-# Homebridge Platform Plugin Template
+## Requirements
 
-</span>
+- Node.js **20**, **22**, or **24** (Homebridge supported LTS).
+- Homebridge **1.8+** or **2.0-beta+**.
 
-> [!IMPORTANT]
-> **Homebridge v2.0 Information**
->
-> This template currently has a
->
-> - `package.json -> engines.homebridge` value of `"^1.8.0 || ^2.0.0-beta.0"`
-> - `package.json -> devDependencies.homebridge` value of `"^2.0.0-beta.0"`
->
-> This is to ensure that your plugin will build and run on both Homebridge v1 and v2.
->
-> Once Homebridge v2.0 has been released, you can remove the `-beta.0` in both places.
+## Installation
 
----
-
-This is a template Homebridge dynamic platform plugin and can be used as a base to help you get started developing your own plugin.
-
-This template should be used in conjunction with the [developer documentation](https://developers.homebridge.io/). A full list of all supported service types, and their characteristics is available on this site.
-
-### Clone As Template
-
-Click the link below to create a new GitHub Repository using this template, or click the _Use This Template_ button above.
-
-<span align="center">
-
-### [Create New Repository From Template](https://github.com/homebridge/homebridge-plugin-template/generate)
-
-</span>
-
-### Setup Development Environment
-
-To develop Homebridge plugins you must have Node.js 18 or later installed, and a modern code editor such as [VS Code](https://code.visualstudio.com/). This plugin template uses [TypeScript](https://www.typescriptlang.org/) to make development easier and comes with pre-configured settings for [VS Code](https://code.visualstudio.com/) and ESLint. If you are using VS Code install these extensions:
-
-- [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
-
-### Install Development Dependencies
-
-Using a terminal, navigate to the project folder and run this command to install the development dependencies:
-
-```shell
-npm install
+```bash
+sudo npm install -g homebridge-ssh
 ```
 
-### Update package.json
+Or install via the Homebridge UI plugin browser.
 
-Open the [`package.json`](./package.json) and change the following attributes:
+## Configuration
 
-- `name` - this should be prefixed with `homebridge-` or `@username/homebridge-`, is case-sensitive, and contains no spaces nor special characters apart from a dash `-`
-- `displayName` - this is the "nice" name displayed in the Homebridge UI
-- `homepage` - link to your GitHub repo's `README.md`
-- `repository.url` - link to your GitHub repo
-- `bugs.url` - link to your GitHub repo issues page
+The Homebridge UI offers a form covering hosts and accessories with conditional fields per type and per auth method. Minimal `config.json` example:
 
-When you are ready to publish the plugin you should set `private` to false, or remove the attribute entirely.
-
-### Update Plugin Defaults
-
-Open the [`src/settings.ts`](./src/settings.ts) file and change the default values:
-
-- `PLATFORM_NAME` - Set this to be the name of your platform. This is the name of the platform that users will use to register the plugin in the Homebridge `config.json`.
-- `PLUGIN_NAME` - Set this to be the same name you set in the [`package.json`](./package.json) file.
-
-Open the [`config.schema.json`](./config.schema.json) file and change the following attribute:
-
-- `pluginAlias` - set this to match the `PLATFORM_NAME` you defined in the previous step.
-
-See the [Homebridge API docs](https://developers.homebridge.io/#/config-schema#default-values) for more details on the other attributes you can set in the `config.schema.json` file.
-
-### Build Plugin
-
-TypeScript needs to be compiled into JavaScript before it can run. The following command will compile the contents of your [`src`](./src) directory and put the resulting code into the `dist` folder.
-
-```shell
-npm run build
-```
-
-### Link To Homebridge
-
-Run this command so your global installation of Homebridge can discover the plugin in your development environment:
-
-```shell
-npm link
-```
-
-You can now start Homebridge, use the `-D` flag, so you can see debug log messages in your plugin:
-
-```shell
-homebridge -D
-```
-
-### Watch For Changes and Build Automatically
-
-If you want to have your code compile automatically as you make changes, and restart Homebridge automatically between changes, you first need to add your plugin as a platform in `./test/hbConfig/config.json`:
-
-```
+```json
 {
-...
-    "platforms": [
-        {
-            "name": "Config",
-            "port": 8581,
-            "platform": "config"
-        },
-        {
-            "name": "<PLUGIN_NAME>",
-            //... any other options, as listed in config.schema.json ...
-            "platform": "<PLATFORM_NAME>"
-        }
-    ]
+  "platform": "HomebridgeSsh",
+  "name": "SSH Bridge",
+  "logLevel": "info",
+  "hosts": [
+    {
+      "id": "gate-pi",
+      "ssh": {
+        "host": "192.0.2.20",
+        "port": 22,
+        "user": "pi",
+        "auth": { "method": "key", "privateKeyPath": "/home/homebridge/.ssh/id_ed25519" }
+      }
+    }
+  ],
+  "accessories": [
+    {
+      "type": "garageDoor",
+      "name": "Front Gate",
+      "host": "gate-pi",
+      "commands": {
+        "open": { "command": "/usr/local/bin/gate-open.sh", "timeoutMs": 5000 },
+        "close": { "command": "/usr/local/bin/gate-close.sh", "timeoutMs": 5000 }
+      },
+      "timing": {
+        "openTravelTimeMs": 15000,
+        "closeTravelTimeMs": 15000,
+        "autoCloseTimeoutMs": 0,
+        "autoCloseMode": "execute",
+        "statePollIntervalMs": 0
+      }
+    },
+    {
+      "type": "switch",
+      "name": "Reboot Gate Pi",
+      "host": "gate-pi",
+      "commands": { "on": { "command": "sudo /sbin/reboot", "timeoutMs": 5000 } },
+      "behavior": { "mode": "momentary", "autoResetMs": 1000 }
+    }
+  ]
 }
 ```
 
-and then you can run:
+### Hosts
 
-```shell
-npm run watch
+| Field                     | Default                    | Notes                                                                                                                                                    |
+| ------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | required                   | Stable identifier referenced by accessories. Lowercase, dashes ok.                                                                                       |
+| `ssh.host`                | required                   | Hostname or IP.                                                                                                                                          |
+| `ssh.port`                | `22`                       |                                                                                                                                                          |
+| `ssh.user`                | required                   |                                                                                                                                                          |
+| `ssh.auth.method`         | `key`                      | `key` \| `password` \| `agent`                                                                                                                           |
+| `ssh.auth.privateKeyPath` | required for key auth      | Path to OpenSSH private key.                                                                                                                             |
+| `ssh.auth.passphrase`     | `""`                       | For encrypted keys.                                                                                                                                      |
+| `ssh.auth.password`       | required for password auth | **Plaintext — prefer `key` or `agent`.**                                                                                                                 |
+| `ssh.connectTimeoutMs`    | `10000`                    |                                                                                                                                                          |
+| `ssh.keepaliveIntervalMs` | `30000`                    |                                                                                                                                                          |
+| `ssh.idleDisconnectMs`    | `0`                        | `0` = never disconnect (default for always-on hosts). `> 0` = close the SSH connection after that many ms idle and reconnect lazily on the next command. |
+
+### Switch accessory
+
+| Field                  | Notes                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `commands.on`          | Required — runs on turn-on.                                                                                                        |
+| `commands.off`         | Optional — runs on turn-off in stateful mode. Warned (and ignored) if set in momentary mode.                                       |
+| `behavior.mode`        | `stateful` (default) or `momentary`.                                                                                               |
+| `behavior.autoResetMs` | Required for momentary; default `1000`. After running the on-command, HomeKit's switch state flips back to off after this many ms. |
+| `state.command`        | Optional — periodically polled to push the real on/off state into HomeKit.                                                         |
+| `state.onValue`        | String to detect "on" in stdout.                                                                                                   |
+| `state.matchMode`      | `exact` (default), `contains`, or `regex`.                                                                                         |
+| `state.pollIntervalMs` | `0` to disable polling.                                                                                                            |
+
+### Garage door accessory
+
+| Field                        | Notes                                                                                                                                                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commands.open`              | Required.                                                                                                                                                                                                      |
+| `commands.close`             | Required.                                                                                                                                                                                                      |
+| `commands.state`             | Optional — polled to reconcile real state with the plugin's tracked state.                                                                                                                                     |
+| `stateMapping`               | Required if `commands.state` is set. `open` and `closed` rules required; `opening`/`closing` optional.                                                                                                         |
+| `timing.openTravelTimeMs`    | How long the gate physically takes to open; `0` for immediate settle.                                                                                                                                          |
+| `timing.closeTravelTimeMs`   | Symmetric.                                                                                                                                                                                                     |
+| `timing.autoCloseTimeoutMs`  | Auto-close N ms after settling to OPEN. `0` disables.                                                                                                                                                          |
+| `timing.autoCloseMode`       | `execute` (default — plugin runs the close command after the timeout, for gates that don't auto-close themselves) or `simulated` (plugin only updates state, for gates whose hardware physically auto-closes). |
+| `timing.statePollIntervalMs` | Poll interval in ms (`0` = no polling).                                                                                                                                                                        |
+
+#### State machine
+
+- `TargetDoorState = Open` → `Opening` → run `commands.open` → after `openTravelTimeMs`, `Open`. If `autoCloseTimeoutMs > 0`, schedule the close cycle (run command in `execute` mode, simulate transitions in `simulated` mode).
+- `TargetDoorState = Closed` mirrors with the close command.
+- A new target during motion cancels in-flight settle and auto-close timers and starts the new transition.
+- A failed command rolls back to the **last stable state** (Open or Closed), throws `SERVICE_COMMUNICATION_FAILURE` to HomeKit, and logs the reason. The orchestrator never wedges on a motion state.
+- When `commands.state` is configured, every `statePollIntervalMs` the parser maps stdout to a state; if it disagrees with the plugin's tracked state, the plugin reconciles and cancels stale timers.
+
+## Local development
+
+This codebase is developed on a Mac. Homebridge runs on Pi A; user scripts run wherever (could be the same Pi or a separate one reachable via SSH).
+
+- **Tests on Mac**: `npm test` (vitest). Domain logic is fully covered with fakes — no SSH, no Homebridge, no Pi required.
+- **Deploy to Pi**: `npm run deploy:pi` runs `prepack` (lint + format + typecheck + test + build), packs, scps to `$PI_HOST` (from `.env.local`), installs runtime deps, restarts Homebridge (auto-detects `hb-service` or `systemctl`).
+- **Tail logs from Mac**: `npm run logs:pi`.
+- **Quick SSH check**: `npm run test:ssh -- "uptime"`.
+
+### First-time setup
+
+```bash
+git clone <repo>
+cd homebridge-ssh
+npm install
+npx simple-git-hooks                    # install the pre-commit secret-scan hook
+cp .env.example .env.local              # then edit with your PI_HOST, etc.
+npm test                                # verify your install works
 ```
 
-This will launch an instance of Homebridge in debug mode which will restart every time you make a change to the source code. It will load the config stored in the default location under `~/.homebridge`. You may need to stop other running instances of Homebridge while using this command to prevent conflicts. You can adjust the Homebridge startup command in the [`nodemon.json`](./nodemon.json) file.
+## License
 
-### Customise Plugin
-
-You can now start customising the plugin template to suit your requirements.
-
-- [`src/platform.ts`](./src/platform.ts) - this is where your device setup and discovery should go.
-- [`src/platformAccessory.ts`](./src/platformAccessory.ts) - this is where your accessory control logic should go, you can rename or create multiple instances of this file for each accessory type you need to implement as part of your platform plugin. You can refer to the [developer documentation](https://developers.homebridge.io/) to see what characteristics you need to implement for each service type.
-- [`config.schema.json`](./config.schema.json) - update the config schema to match the config you expect from the user. See the [Plugin Config Schema Documentation](https://developers.homebridge.io/#/config-schema).
-
-### Versioning Your Plugin
-
-Given a version number `MAJOR`.`MINOR`.`PATCH`, such as `1.4.3`, increment the:
-
-1. **MAJOR** version when you make breaking changes to your plugin,
-2. **MINOR** version when you add functionality in a backwards compatible manner, and
-3. **PATCH** version when you make backwards compatible bug fixes.
-
-You can use the `npm version` command to help you with this:
-
-```shell
-# major update / breaking changes
-npm version major
-
-# minor update / new features
-npm version update
-
-# patch / bugfixes
-npm version patch
-```
-
-### Publish Package
-
-When you are ready to publish your plugin to [npm](https://www.npmjs.com/), make sure you have removed the `private` attribute from the [`package.json`](./package.json) file then run:
-
-```shell
-npm publish
-```
-
-If you are publishing a scoped plugin, i.e. `@username/homebridge-xxx` you will need to add `--access=public` to command the first time you publish.
-
-#### Publishing Beta Versions
-
-You can publish _beta_ versions of your plugin for other users to test before you release it to everyone.
-
-```shell
-# create a new pre-release version (eg. 2.1.0-beta.1)
-npm version prepatch --preid beta
-
-# publish to @beta
-npm publish --tag beta
-```
-
-Users can then install the _beta_ version by appending `@beta` to the install command, for example:
-
-```shell
-sudo npm install -g homebridge-example-plugin@beta
-```
-
-### Best Practices
-
-Consider creating your plugin with the [Homebridge Verified](https://github.com/homebridge/verified) criteria in mind. This will help you to create a plugin that is easy to use and works well with Homebridge.
-You can then submit your plugin to the Homebridge Verified list for review.
-The most up-to-date criteria can be found [here](https://github.com/homebridge/verified#requirements).
-For reference, the current criteria are:
-
-- **General**
-  - The plugin must be of type [dynamic platform](https://developers.homebridge.io/#/#dynamic-platform-template).
-  - The plugin must not offer the same nor less functionality than that of any existing **verified** plugin.
-- **Repo**
-  - The plugin must be published to NPM and the source code available on a GitHub repository, with issues enabled.
-  - A GitHub release should be created for every new version of your plugin, with release notes.
-- **Environment**
-  - The plugin must run on all [supported LTS versions of Node.js](https://github.com/homebridge/homebridge/wiki/How-To-Update-Node.js), at the time of writing this is Node v18, v20 and v22.
-  - The plugin must successfully install and not start unless it is configured.
-  - The plugin must not execute post-install scripts that modify the users' system in any way.
-  - The plugin must not require the user to run Homebridge in a TTY or with non-standard startup parameters, even for initial configuration.
-- **Codebase**
-  - The plugin must implement the [Homebridge Plugin Settings GUI](https://developers.homebridge.io/#/config-schema).
-  - The plugin must not contain any analytics or calls that enable you to track the user.
-  - If the plugin needs to write files to disk (cache, keys, etc.), it must store them inside the Homebridge storage directory.
-  - The plugin must not throw unhandled exceptions, the plugin must catch and log its own errors.
-
-### Useful Links
-
-Note these links are here for help but are not supported/verified by the Homebridge team
-
-- [Custom Characteristics](https://github.com/homebridge/homebridge-plugin-template/issues/20)
+Apache-2.0.

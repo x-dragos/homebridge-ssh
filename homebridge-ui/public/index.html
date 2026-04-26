@@ -1,0 +1,402 @@
+<link rel="stylesheet" href="style.css" />
+
+<div id="app" class="container-fluid p-0">
+  <!-- Hosts section -->
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Hosts</strong>
+      <button type="button" class="btn btn-sm btn-primary" id="add-host">+ Add host</button>
+    </div>
+    <div class="card-body p-2" id="hosts-list"></div>
+  </div>
+
+  <!-- Accessories section -->
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Accessories</strong>
+      <div>
+        <button type="button" class="btn btn-sm btn-primary me-1" id="add-switch">+ Add switch</button>
+        <button type="button" class="btn btn-sm btn-primary" id="add-garage">+ Add garage door</button>
+      </div>
+    </div>
+    <div class="card-body p-2" id="accessories-list"></div>
+  </div>
+
+  <!-- Bridge meta -->
+  <div class="card mb-3">
+    <div class="card-header"><strong>Bridge</strong></div>
+    <div class="card-body">
+      <div class="mb-3">
+        <label for="bridge-name" class="form-label">Bridge name</label>
+        <input id="bridge-name" type="text" class="form-control" />
+      </div>
+      <div class="mb-3">
+        <label for="log-level" class="form-label">Log level</label>
+        <select id="log-level" class="form-select">
+          <option value="debug">debug</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="d-flex justify-content-between mb-3">
+    <button type="button" class="btn btn-link p-0" id="show-json">Show JSON editor</button>
+    <button type="button" class="btn btn-success" id="save">Save</button>
+  </div>
+</div>
+
+<!-- Templates -->
+<template id="host-tmpl">
+  <div class="card mb-2 host-card">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center collapsible-header">
+      <div>
+        <span class="status-dot me-2" data-status="unknown" title="not yet tested"></span>
+        <span class="host-summary">new host</span>
+      </div>
+      <small class="text-body-secondary toggle-hint">click to expand</small>
+    </div>
+    <div class="card-body collapse">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Host ID <span class="text-danger">*</span></label>
+          <input class="form-control field-id" type="text" pattern="^[a-z0-9][a-z0-9-]*$" />
+          <div class="form-text">Lowercase, dashes ok. Referenced from accessories.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Hostname / IP <span class="text-danger">*</span></label>
+          <input class="form-control field-host" type="text" />
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Port</label>
+          <input class="form-control field-port" type="number" placeholder="22" />
+        </div>
+        <div class="col-md-9">
+          <label class="form-label">User <span class="text-danger">*</span></label>
+          <input class="form-control field-user" type="text" />
+        </div>
+        <div class="col-12">
+          <label class="form-label">Authentication</label>
+          <select class="form-select field-auth-method">
+            <option value="key">SSH key</option>
+            <option value="password">Password</option>
+            <option value="agent">SSH agent</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="auth-key mt-3">
+        <div class="mb-3">
+          <label class="form-label">Private key path</label>
+          <input class="form-control field-private-key" type="text" placeholder="/home/homebridge/.ssh/id_ed25519" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Passphrase (only if the key is encrypted)</label>
+          <input class="form-control field-passphrase" type="password" autocomplete="new-password" />
+        </div>
+      </div>
+      <div class="auth-password mt-3">
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input class="form-control field-password" type="password" autocomplete="new-password" />
+        </div>
+      </div>
+
+      <details class="mt-2">
+        <summary class="advanced-summary mb-2">Advanced</summary>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Connect timeout (ms)</label>
+            <input class="form-control field-connect-timeout" type="number" placeholder="10000" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Keepalive interval (ms)</label>
+            <input class="form-control field-keepalive" type="number" placeholder="30000" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Idle disconnect (ms, 0 = never)</label>
+            <input class="form-control field-idle-disconnect" type="number" placeholder="0" />
+          </div>
+        </div>
+      </details>
+
+      <div class="d-flex justify-content-between mt-3">
+        <button type="button" class="btn btn-sm btn-outline-primary action-test-connection">Test connection</button>
+        <button type="button" class="btn btn-sm btn-outline-danger action-delete-host">Delete host</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="accessory-tmpl">
+  <div class="card mb-2 accessory-card">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center collapsible-header">
+      <div>
+        <span class="badge type-badge me-2"></span>
+        <span class="accessory-summary">new accessory</span>
+        <span class="badge text-bg-secondary ms-2 host-badge"></span>
+      </div>
+      <small class="text-body-secondary toggle-hint">click to expand</small>
+    </div>
+    <div class="card-body collapse">
+      <!-- Basics -->
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input class="form-control field-name" type="text" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Host <span class="text-danger">*</span></label>
+          <select class="form-select field-host"></select>
+        </div>
+      </div>
+
+      <!-- Commands -->
+      <h6 class="mt-4">Commands</h6>
+      <div class="commands-switch">
+        <div class="mb-2">
+          <label class="form-label">On command</label>
+          <div class="input-group">
+            <input class="form-control field-cmd-on" type="text" />
+            <button type="button" class="btn btn-outline-primary action-test-on">Test</button>
+          </div>
+        </div>
+        <details class="mb-3">
+          <summary class="advanced-summary">On command — advanced</summary>
+          <div class="mt-2">
+            <label class="form-label">Timeout (ms)</label>
+            <input class="form-control field-cmd-on-timeout" type="number" placeholder="5000" />
+          </div>
+        </details>
+
+        <div class="form-check mb-2">
+          <input class="form-check-input toggle-off" type="checkbox" />
+          <label class="form-check-label">Has off command</label>
+        </div>
+        <div class="off-block d-none ms-3">
+          <div class="mb-2">
+            <label class="form-label">Off command</label>
+            <div class="input-group">
+              <input class="form-control field-cmd-off" type="text" />
+              <button type="button" class="btn btn-outline-primary action-test-off">Test</button>
+            </div>
+          </div>
+          <details class="mb-3">
+            <summary class="advanced-summary">Off command — advanced</summary>
+            <div class="mt-2">
+              <label class="form-label">Timeout (ms)</label>
+              <input class="form-control field-cmd-off-timeout" type="number" placeholder="5000" />
+            </div>
+          </details>
+        </div>
+      </div>
+      <div class="commands-garage">
+        <div class="mb-2">
+          <label class="form-label">Open command</label>
+          <div class="input-group">
+            <input class="form-control field-cmd-open" type="text" />
+            <button type="button" class="btn btn-outline-primary action-test-open">Test</button>
+          </div>
+        </div>
+        <details class="mb-3">
+          <summary class="advanced-summary">Open command — advanced</summary>
+          <div class="mt-2">
+            <label class="form-label">Timeout (ms)</label>
+            <input class="form-control field-cmd-open-timeout" type="number" placeholder="5000" />
+          </div>
+        </details>
+        <div class="mb-2">
+          <label class="form-label">Close command</label>
+          <div class="input-group">
+            <input class="form-control field-cmd-close" type="text" />
+            <button type="button" class="btn btn-outline-primary action-test-close">Test</button>
+          </div>
+        </div>
+        <details class="mb-3">
+          <summary class="advanced-summary">Close command — advanced</summary>
+          <div class="mt-2">
+            <label class="form-label">Timeout (ms)</label>
+            <input class="form-control field-cmd-close-timeout" type="number" placeholder="5000" />
+          </div>
+        </details>
+      </div>
+
+      <div class="form-check mb-2">
+        <input class="form-check-input toggle-state" type="checkbox" />
+        <label class="form-check-label">Has state command</label>
+      </div>
+      <div class="state-cmd-block d-none ms-3">
+        <div class="mb-2">
+          <label class="form-label">State command</label>
+          <div class="input-group">
+            <input class="form-control field-cmd-state" type="text" />
+            <button type="button" class="btn btn-outline-primary action-test-state">Test</button>
+          </div>
+        </div>
+        <details class="mb-3">
+          <summary class="advanced-summary">State command — advanced</summary>
+          <div class="mt-2">
+            <label class="form-label">Timeout (ms)</label>
+            <input class="form-control field-cmd-state-timeout" type="number" placeholder="3000" />
+          </div>
+        </details>
+      </div>
+
+      <!-- Behavior (switch only) -->
+      <div class="behavior-block">
+        <h6 class="mt-4">Behavior</h6>
+        <div class="mb-3">
+          <label class="form-label">Mode</label>
+          <select class="form-select field-behavior-mode">
+            <option value="stateful">Stateful (toggle)</option>
+            <option value="momentary">Momentary (auto-reset)</option>
+          </select>
+        </div>
+        <div class="mb-3 momentary-block d-none">
+          <label class="form-label">Auto-reset delay (ms)</label>
+          <input class="form-control field-auto-reset" type="number" placeholder="1000" />
+        </div>
+      </div>
+
+      <!-- State polling — switch -->
+      <div class="state-poll-switch state-cmd-dependent d-none">
+        <h6 class="mt-4">State polling</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">"On" value</label>
+            <input class="form-control field-on-value" type="text" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Match mode</label>
+            <select class="form-select field-match-mode">
+              <option value="exact">Exact</option>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Poll interval (ms, 0 = no polling)</label>
+            <input class="form-control field-poll-interval" type="number" placeholder="0" />
+          </div>
+        </div>
+      </div>
+
+      <!-- State mapping — garage -->
+      <div class="state-map-block state-cmd-dependent d-none">
+        <h6 class="mt-4">State mapping</h6>
+        <div class="row g-3">
+          <div class="col-md-8">
+            <label class="form-label">Open — match</label>
+            <input class="form-control field-map-open-match" type="text" placeholder="OPEN" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Mode</label>
+            <select class="form-select field-map-open-mode">
+              <option value="exact">Exact</option>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex</option>
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Closed — match</label>
+            <input class="form-control field-map-closed-match" type="text" placeholder="CLOSED" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Mode</label>
+            <select class="form-select field-map-closed-mode">
+              <option value="exact">Exact</option>
+              <option value="contains">Contains</option>
+              <option value="regex">Regex</option>
+            </select>
+          </div>
+        </div>
+        <details class="mt-3">
+          <summary class="advanced-summary mb-2">Also map opening / closing (optional)</summary>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">Opening — match</label>
+              <input class="form-control field-map-opening-match" type="text" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Mode</label>
+              <select class="form-select field-map-opening-mode">
+                <option value="exact">Exact</option>
+                <option value="contains">Contains</option>
+                <option value="regex">Regex</option>
+              </select>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Closing — match</label>
+              <input class="form-control field-map-closing-match" type="text" />
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Mode</label>
+              <select class="form-select field-map-closing-mode">
+                <option value="exact">Exact</option>
+                <option value="contains">Contains</option>
+                <option value="regex">Regex</option>
+              </select>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Timing — garage only -->
+      <div class="timing-block">
+        <h6 class="mt-4">Timing</h6>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Open travel time (ms)</label>
+            <input class="form-control field-open-travel" type="number" placeholder="0" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Close travel time (ms)</label>
+            <input class="form-control field-close-travel" type="number" placeholder="0" />
+          </div>
+        </div>
+        <div class="form-check mt-3 mb-2">
+          <input class="form-check-input toggle-autoclose" type="checkbox" />
+          <label class="form-check-label">Auto-close after open</label>
+        </div>
+        <div class="autoclose-block d-none ms-3">
+          <div class="mb-3">
+            <label class="form-label">Auto-close timeout (ms)</label>
+            <input class="form-control field-autoclose-timeout" type="number" placeholder="0" />
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Auto-close mode</label>
+            <select class="form-select field-autoclose-mode">
+              <option value="execute">Plugin runs the close command</option>
+              <option value="simulated">Hardware closes itself (state-only)</option>
+            </select>
+            <div class="form-text">
+              Use "Plugin runs the close command" if your gate doesn't auto-close on its own. Use "Hardware closes
+              itself" if your gate or remote script physically auto-closes — the plugin will only mirror state.
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 state-cmd-dependent d-none">
+          <label class="form-label">State poll interval (ms, 0 = disabled)</label>
+          <input class="form-control field-state-poll-interval" type="number" placeholder="0" />
+        </div>
+        <div class="mt-3 state-cmd-dependent d-none">
+          <label class="form-label">Transient poll interval (ms, 0 = use state poll interval)</label>
+          <input class="form-control field-transient-poll-interval" type="number" placeholder="1000" />
+          <div class="form-text">
+            Faster cadence used only while the gate is Opening or Closing — HomeKit sees real progress without spamming
+            SSH while the gate is parked.
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end mt-3">
+        <button type="button" class="btn btn-sm btn-outline-danger action-delete-accessory">Delete accessory</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="app.js"></script>

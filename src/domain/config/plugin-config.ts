@@ -71,6 +71,13 @@ const garageTimingSchema = z.object({
    */
   autoCloseMode: z.enum(['execute', 'simulated']).default('execute'),
   statePollIntervalMs: z.number().int().min(0).max(3_600_000).default(0),
+  /**
+   * Fast-poll cadence used only while the door is in a transient state (Opening/Closing).
+   * 0 disables fast-polling and falls back to `statePollIntervalMs` regardless of state.
+   * Defaults to 1000ms — gives HomeKit second-by-second feedback during travel without
+   * spamming SSH while the door is parked.
+   */
+  transientPollIntervalMs: z.number().int().min(0).max(60_000).default(1000),
 });
 
 const garageDoorAccessorySchema = z

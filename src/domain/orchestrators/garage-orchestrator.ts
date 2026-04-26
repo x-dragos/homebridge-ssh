@@ -16,6 +16,12 @@ export interface GarageTiming {
   readonly autoCloseTimeoutMs: number;
   readonly autoCloseMode: AutoCloseMode;
   readonly statePollIntervalMs: number;
+  /**
+   * Optional fast-poll cadence used while the door is in a transient state (Opening/Closing).
+   * 0 = use `statePollIntervalMs` regardless of state. Default in the schema: 1000ms.
+   * Lets HomeKit see real progress without spamming SSH while the door is parked.
+   */
+  readonly transientPollIntervalMs?: number;
 }
 
 export interface GarageOrchestratorConfig {
@@ -52,6 +58,12 @@ export class GarageOrchestrator {
   private autoCloseSettleHandle: TimerHandle | null = null;
   private pollHandle: TimerHandle | null = null;
   private stopped = false;
+  /**
+   * Watchdog timestamp: when auto-close fired (in ms since epoch via Clock).
+   * The next state poll that observes Open while we expect to be closing falls back
+   * to running the close command. Cleared on success (Closed observed) or stop().
+   */
+  private autoCloseFiredAt: number | null = null;
 
   constructor(private readonly cfg: GarageOrchestratorConfig) {
     this.currentState = cfg.initialState ?? DoorState.Closed;
@@ -71,17 +83,25 @@ export class GarageOrchestrator {
     if (this.stopped) {
       return;
     }
-    if (this.cfg.stateCommand && this.cfg.stateParser && this.cfg.timing.statePollIntervalMs > 0) {
+    if (!this.cfg.stateCommand || !this.cfg.stateParser) {
+      return;
+    }
+    // Start polling if either cadence is configured. The interval picker will
+    // skip the next schedule when the cadence relevant to the current state is 0.
+    if (this.cfg.timing.statePollIntervalMs > 0 || (this.cfg.timing.transientPollIntervalMs ?? 0) > 0) {
       void this.pollOnce().finally(() => this.scheduleNextPoll());
     }
   }
 
   stop(): void {
     this.stopped = true;
+    this.autoCloseFiredAt = null;
     this.cancelAllTimers();
   }
 
   async setTarget(target: DoorTarget): Promise<void> {
+    // User is taking control; the auto-close watchdog is no longer relevant.
+    this.autoCloseFiredAt = null;
     if (target === 'open') {
       return this.requestOpen();
     }
@@ -132,6 +152,9 @@ export class GarageOrchestrator {
   }
 
   private rollbackToLastStable(): void {
+    // A failed command also clears the watchdog so we don't enter a retry loop on
+    // a permanently broken close path.
+    this.autoCloseFiredAt = null;
     this.cancelMotionTimers();
     this.targetState = this.lastStable;
     const settled: DoorState = this.lastStable === 'open' ? DoorState.Open : DoorState.Closed;
@@ -154,10 +177,12 @@ export class GarageOrchestrator {
   private scheduleAutoClose(): void {
     this.autoCloseHandle = this.cfg.clock.setTimeout(() => {
       this.autoCloseHandle = null;
+      this.autoCloseFiredAt = this.cfg.clock.now();
       if (this.cfg.timing.autoCloseMode === 'execute') {
         // Plugin actively closes the gate. Errors are already logged and rolled
         // back inside requestClose; nothing useful to do with the rejection here.
         void this.requestClose().catch(() => {});
+        this.scheduleAutoCloseWatchdogPoll();
         return;
       }
       // 'simulated': hardware/remote script handles the physical close — the
@@ -168,24 +193,73 @@ export class GarageOrchestrator {
       if (travel <= 0) {
         this.transitionTo(DoorState.Closed);
         this.lastStable = 'closed';
+      } else {
+        this.autoCloseSettleHandle = this.cfg.clock.setTimeout(() => {
+          this.autoCloseSettleHandle = null;
+          this.transitionTo(DoorState.Closed);
+          this.lastStable = 'closed';
+        }, travel);
+      }
+      this.scheduleAutoCloseWatchdogPoll();
+    }, this.cfg.timing.autoCloseTimeoutMs);
+  }
+
+  /**
+   * Force a single state poll once `closeTravelTimeMs` has elapsed since auto-close
+   * fired. Composes with the regular poll loop: if polling is already running, this
+   * is just one extra check; if polling was disabled, it provides the watchdog signal.
+   * The watchdog action (firing close as fallback) lives in `checkAutoCloseWatchdog`.
+   */
+  private scheduleAutoCloseWatchdogPoll(): void {
+    if (!this.cfg.stateCommand || !this.cfg.stateParser) {
+      return;
+    }
+    const delayMs = Math.max(this.cfg.timing.closeTravelTimeMs, 1000);
+    this.cfg.clock.setTimeout(() => {
+      if (this.stopped || this.autoCloseFiredAt === null) {
         return;
       }
-      this.autoCloseSettleHandle = this.cfg.clock.setTimeout(() => {
-        this.autoCloseSettleHandle = null;
-        this.transitionTo(DoorState.Closed);
-        this.lastStable = 'closed';
-      }, travel);
-    }, this.cfg.timing.autoCloseTimeoutMs);
+      void this.pollOnce();
+    }, delayMs);
+  }
+
+  private pollIntervalForCurrent(): number {
+    const transient = this.cfg.timing.transientPollIntervalMs ?? 0;
+    const isTransient = this.currentState === DoorState.Opening || this.currentState === DoorState.Closing;
+    if (isTransient && transient > 0) {
+      return transient;
+    }
+    return this.cfg.timing.statePollIntervalMs;
   }
 
   private scheduleNextPoll(): void {
     if (this.stopped) {
       return;
     }
+    if (!this.cfg.stateCommand || !this.cfg.stateParser) {
+      return;
+    }
+    const interval = this.pollIntervalForCurrent();
+    if (interval <= 0) {
+      // No cadence applies to the current state; pause polling until the next transition.
+      return;
+    }
     this.pollHandle = this.cfg.clock.setTimeout(() => {
       this.pollHandle = null;
       void this.pollOnce().finally(() => this.scheduleNextPoll());
-    }, this.cfg.timing.statePollIntervalMs);
+    }, interval);
+  }
+
+  /** Invalidates any pending poll and (re)schedules one with the cadence for the current state. */
+  private rescheduleNextPoll(): void {
+    if (this.stopped) {
+      return;
+    }
+    if (this.pollHandle) {
+      this.cfg.clock.clearTimeout(this.pollHandle);
+      this.pollHandle = null;
+    }
+    this.scheduleNextPoll();
   }
 
   private async pollOnce(): Promise<void> {
@@ -200,8 +274,37 @@ export class GarageOrchestrator {
         return;
       }
       this.reconcile(parsed);
+      this.checkAutoCloseWatchdog(parsed);
     } catch (err) {
       this.cfg.logger.warn('state poll failed', { reason: (err as Error).message });
+    }
+  }
+
+  /**
+   * Auto-close watchdog: if auto-close fired and the gate is observed to still be
+   * Open after enough time has elapsed for the close to have completed, run the
+   * close command as fallback. Works in both `execute` and `simulated` modes.
+   */
+  private checkAutoCloseWatchdog(parsed: DoorState): void {
+    if (this.autoCloseFiredAt === null) {
+      return;
+    }
+    if (parsed === DoorState.Closed) {
+      // Gate is confirmed closed. Watchdog satisfied.
+      this.autoCloseFiredAt = null;
+      return;
+    }
+    if (parsed === DoorState.Closing || parsed === DoorState.Opening) {
+      // Still in motion — keep waiting.
+      return;
+    }
+    const elapsed = this.cfg.clock.now() - this.autoCloseFiredAt;
+    if (parsed === DoorState.Open && elapsed >= this.cfg.timing.closeTravelTimeMs) {
+      this.cfg.logger.warn('auto-close watchdog: gate still open after timeout, firing close command', {
+        elapsedMs: elapsed,
+      });
+      this.autoCloseFiredAt = null;
+      void this.requestClose().catch(() => {});
     }
   }
 
@@ -217,6 +320,7 @@ export class GarageOrchestrator {
       this.lastStable = parsed === DoorState.Open ? 'open' : 'closed';
     }
     this.cfg.onChange(this.currentState, this.targetState);
+    this.rescheduleNextPoll();
   }
 
   private transitionTo(state: DoorState): void {
@@ -225,6 +329,8 @@ export class GarageOrchestrator {
     }
     this.currentState = state;
     this.cfg.onChange(this.currentState, this.targetState);
+    // Cadence depends on whether we just entered/left a transient state.
+    this.rescheduleNextPoll();
   }
 
   private cancelMotionTimers(): void {

@@ -1,0 +1,59 @@
+/* Light layer on top of Bootstrap 5 (auto-injected by Homebridge UI). */
+
+#app {
+  padding: 0.5rem;
+}
+
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6c757d;
+  vertical-align: middle;
+}
+.status-dot[data-status='ok'] {
+  background: #28a745;
+}
+.status-dot[data-status='fail'] {
+  background: #dc3545;
+}
+
+.type-badge.switch {
+  background: #0dcaf0;
+  color: #000;
+}
+.type-badge.garageDoor {
+  background: #6f42c1;
+  color: #fff;
+}
+
+/* Disclosure ("Advanced", per-command timeout). text-muted is too dim
+   on dark mode; use currentColor with reduced opacity. */
+.advanced-summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  opacity: 0.65;
+  user-select: none;
+}
+.advanced-summary:hover {
+  opacity: 1;
+}
+details > summary {
+  outline: none;
+}
+details[open] > .advanced-summary {
+  opacity: 0.85;
+  margin-bottom: 0.5rem;
+}
+
+/* Tighter spacing for the summary chip in card headers */
+.host-summary,
+.accessory-summary {
+  font-weight: 500;
+}

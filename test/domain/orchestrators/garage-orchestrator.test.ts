@@ -370,3 +370,154 @@ describe('GarageOrchestrator — state poll reconciliation', () => {
     o.stop();
   });
 });
+
+describe('GarageOrchestrator — transient-state fast polling', () => {
+  let runner: FakeCommandRunner;
+  let clock: FakeClock;
+  let logger: FakeLogger;
+
+  beforeEach(() => {
+    runner = new FakeCommandRunner();
+    clock = new FakeClock();
+    logger = new FakeLogger();
+    runner.setDefault('open', ok());
+    runner.setDefault('close', ok());
+    runner.setDefault('state', ok({ stdout: 'CLOSED\n' }));
+  });
+
+  function buildFastPoll() {
+    return new GarageOrchestrator({
+      runner,
+      clock,
+      logger,
+      onChange: () => {},
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+        opening: { match: 'OPENING', mode: 'exact' },
+        closing: { match: 'CLOSING', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 10000,
+        closeTravelTimeMs: 10000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 30000,
+        transientPollIntervalMs: 1000,
+      },
+      initialState: DoorState.Closed,
+    });
+  }
+
+  it('uses transientPollIntervalMs while Opening, falls back to statePollIntervalMs when Open', async () => {
+    const o = buildFastPoll();
+    o.start();
+    await new Promise((r) => setImmediate(r));
+    const stateInvocationsBefore = runner.invocations.filter((i) => i.command === 'state').length;
+
+    // Make the state command agree with the simulated motion so polls do not drift us.
+    runner.setDefault('state', ok({ stdout: 'OPENING\n' }));
+
+    await o.setTarget('open');
+    expect(o.current()).toBe(DoorState.Opening);
+
+    // While Opening, fast poll fires every second. Advance 3s; expect ~3 polls.
+    clock.advance(1000);
+    await new Promise((r) => setImmediate(r));
+    clock.advance(1000);
+    await new Promise((r) => setImmediate(r));
+    clock.advance(1000);
+    await new Promise((r) => setImmediate(r));
+    const stateDuringTransient = runner.invocations.filter((i) => i.command === 'state').length;
+    expect(stateDuringTransient - stateInvocationsBefore).toBeGreaterThanOrEqual(3);
+
+    // Settle to Open at 10s total (we already advanced 3000ms; advance the rest).
+    runner.setDefault('state', ok({ stdout: 'OPEN\n' }));
+    clock.advance(7000);
+    await new Promise((r) => setImmediate(r));
+    expect(o.current()).toBe(DoorState.Open);
+    const stateAtOpen = runner.invocations.filter((i) => i.command === 'state').length;
+
+    // While Open, advance 5s (less than statePollIntervalMs=30s). No new polls expected.
+    clock.advance(5000);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(stateAtOpen);
+
+    o.stop();
+  });
+});
+
+describe('GarageOrchestrator — auto-close watchdog', () => {
+  let runner: FakeCommandRunner;
+  let clock: FakeClock;
+  let logger: FakeLogger;
+
+  beforeEach(() => {
+    runner = new FakeCommandRunner();
+    clock = new FakeClock();
+    logger = new FakeLogger();
+    runner.setDefault('open', ok());
+    runner.setDefault('close', ok());
+  });
+
+  function buildSimulatedAutoClose() {
+    return new GarageOrchestrator({
+      runner,
+      clock,
+      logger,
+      onChange: () => {},
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+        opening: { match: 'OPENING', mode: 'exact' },
+        closing: { match: 'CLOSING', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 1000,
+        closeTravelTimeMs: 2000,
+        autoCloseTimeoutMs: 5000,
+        autoCloseMode: 'simulated',
+        statePollIntervalMs: 30000,
+        transientPollIntervalMs: 1000,
+      },
+      initialState: DoorState.Closed,
+    });
+  }
+
+  it('fires close command if state poll reports Open after auto-close window elapsed (simulated mode)', async () => {
+    runner.setDefault('state', ok({ stdout: 'CLOSED\n' }));
+    const o = buildSimulatedAutoClose();
+    o.start();
+    await new Promise((r) => setImmediate(r));
+
+    // Simulate a broken gate: regardless of plugin state, the gate reports OPEN once
+    // we've opened it. This stresses the watchdog: hardware never actually closed.
+    runner.setDefault('state', ok({ stdout: 'OPENING\n' }));
+    await o.setTarget('open');
+
+    runner.setDefault('state', ok({ stdout: 'OPEN\n' }));
+    clock.advance(1000); // openTravelTimeMs reached → settled to Open
+    await new Promise((r) => setImmediate(r));
+    expect(o.current()).toBe(DoorState.Open);
+    const closesBeforeWatchdog = runner.invocations.filter((i) => i.command === 'close').length;
+
+    // Auto-close fires at t=1+5=6s. Plugin (simulated) transitions to Closing.
+    // Watchdog poll fires at t=6+closeTravelTimeMs(2)=8s — by then elapsed=2s ≥ 2s,
+    // gate is still Open per poll, so the watchdog must run the close command.
+    clock.advance(7000); // now at t=8000
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    const closesAfterWatchdog = runner.invocations.filter((i) => i.command === 'close').length;
+    expect(closesAfterWatchdog).toBeGreaterThan(closesBeforeWatchdog);
+    expect(logger.entries.some((e) => e.message.includes('auto-close watchdog'))).toBe(true);
+
+    o.stop();
+  });
+});

@@ -87,22 +87,18 @@ else
   sudo "$NPM_BIN" install -g "/tmp/${TARBALL_BASENAME}" >/dev/null
 fi
 
-# Restart Homebridge — same auto-detection as before.
+# Restart is intentionally NOT automatic — when the plugin runs as a child bridge
+# its lifecycle is managed by the parent Homebridge process, and `hb-service restart`
+# / `systemctl restart homebridge` would only bounce the parent, not the child.
+# Restart the plugin yourself via the Homebridge UI (plugin tile -> Restart) or by
+# setting PI_RESTART_CMD in .env.local to whatever command bounces your setup.
 if [[ -n "${PI_RESTART_CMD}" ]]; then
   echo "[remote] using PI_RESTART_CMD: ${PI_RESTART_CMD}"
   eval "${PI_RESTART_CMD}"
-elif command -v hb-service >/dev/null 2>&1; then
-  echo "[remote] hb-service detected — restarting"
-  sudo hb-service restart
-elif systemctl list-units --type=service | grep -q homebridge; then
-  echo "[remote] systemd homebridge unit detected — restarting"
-  sudo systemctl restart homebridge
+  echo "[remote] restart issued"
 else
-  echo "[remote] WARNING: could not detect homebridge service manager. Restart manually." >&2
-  exit 0
+  echo "[remote] install complete — restart the plugin from the Homebridge UI."
 fi
-
-echo "[remote] restart issued"
 REMOTE_EOF
 
 rm -f "$TARBALL"

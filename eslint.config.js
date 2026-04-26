@@ -31,7 +31,7 @@ const NODE_PREFIXED_GLOB = ['node:*', 'node:**'];
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'docs/**', 'test/hbConfig/**'],
+    ignores: ['dist/**', 'docs/**', 'test/hbConfig/**', 'homebridge-ui/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
