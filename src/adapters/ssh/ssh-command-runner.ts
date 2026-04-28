@@ -78,6 +78,7 @@ export class SshCommandRunner implements CommandRunner {
     return new Promise<CommandResult>((resolve, reject) => {
       let timeoutHandle: NodeJS.Timeout | null = null;
       let settled = false;
+      let activeChannel: ClientChannel | null = null;
       const settle = (fn: () => void) => {
         if (settled) {
           return;
@@ -93,23 +94,29 @@ export class SshCommandRunner implements CommandRunner {
 
       client.exec(spec.command, (err, channel) => {
         if (err) {
+          // Channel-level transport error (eg. server refused channel-open
+          // because MaxSessions is exhausted on this connection). The
+          // persistent client is in a poisoned state — every subsequent exec
+          // on it will hit the same wall — so drop it and let the next run
+          // lazily reconnect.
+          this.recycleClient(new Error(`ssh client recycled: ${err.message}`));
           settle(() => reject(new CommandRunnerTransportError(err.message, { cause: err })));
           return;
         }
         let stdout = '';
         let stderr = '';
-        const ch = channel as ClientChannel;
-        ch.on('data', (chunk: Buffer) => {
+        activeChannel = channel as ClientChannel;
+        activeChannel.on('data', (chunk: Buffer) => {
           stdout += chunk.toString('utf8');
         });
-        ch.stderr.on('data', (chunk: Buffer) => {
+        activeChannel.stderr.on('data', (chunk: Buffer) => {
           stderr += chunk.toString('utf8');
         });
         let exitCode: number | null = null;
-        ch.on('exit', (code: number) => {
+        activeChannel.on('exit', (code: number) => {
           exitCode = code;
         });
-        ch.on('close', () => {
+        activeChannel.on('close', () => {
           settle(() => {
             const code = exitCode ?? -1;
             const durationMs = Date.now() - startedAt;
@@ -131,9 +138,50 @@ export class SshCommandRunner implements CommandRunner {
       });
 
       timeoutHandle = setTimeout(() => {
+        // Best-effort: terminate the remote process and free the channel slot.
+        // Without this, a hanging remote command keeps consuming a session on
+        // the persistent SSH connection (default sshd MaxSessions = 10), and
+        // after enough leaks every new exec returns "Channel open failure".
+        if (activeChannel) {
+          try {
+            activeChannel.signal('KILL');
+          } catch {
+            /* ignore - channel may already be closed or signal unsupported */
+          }
+          try {
+            activeChannel.close();
+          } catch {
+            /* ignore */
+          }
+        }
         settle(() => reject(new CommandRunnerTimeoutError(spec.timeoutMs)));
       }, spec.timeoutMs);
     });
+  }
+
+  /**
+   * Tear down the current SSH client. Used when an exec-level error indicates
+   * the connection itself is no longer usable. Synchronously nulls the client
+   * reference so concurrent run() calls don't grab a poisoned client, fires
+   * onDisconnect listeners directly (the natural 'close' event handler would
+   * otherwise no-op because we already cleared this.client), and ends the
+   * transport.
+   */
+  private recycleClient(reason: Error): void {
+    if (!this.client) {
+      return;
+    }
+    const c = this.client;
+    this.client = null;
+    this.cancelIdleTimer();
+    try {
+      c.end();
+    } catch {
+      /* ignore */
+    }
+    for (const listener of this.listeners) {
+      listener(reason);
+    }
   }
 
   async disconnect(): Promise<void> {

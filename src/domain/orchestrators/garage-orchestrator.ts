@@ -57,6 +57,9 @@ function truncate(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max)}...`;
 }
 
+/** Hard cap for the exponential backoff applied to consecutive poll failures. */
+const POLL_BACKOFF_MAX_MS = 60_000;
+
 export class GarageOrchestrator {
   private currentState: DoorState;
   private targetState: DoorTarget;
@@ -72,6 +75,12 @@ export class GarageOrchestrator {
    * to running the close command. Cleared on success (Closed observed) or stop().
    */
   private autoCloseFiredAt: number | null = null;
+  /**
+   * Count of consecutive state-poll failures (SSH-level, not parse-level).
+   * Drives exponential backoff in `nextPollDelayMs`. Reset to 0 on the first
+   * successful state command.
+   */
+  private consecutiveFailures = 0;
 
   constructor(private readonly cfg: GarageOrchestratorConfig) {
     this.currentState = cfg.initialState ?? DoorState.Closed;
@@ -281,6 +290,27 @@ export class GarageOrchestrator {
     return this.cfg.timing.statePollIntervalMs;
   }
 
+  /**
+   * Cadence for the *next* poll. While SSH is healthy this matches the
+   * configured cadence. After consecutive failures (typically because the
+   * persistent SSH connection is poisoned and every exec is failing fast),
+   * the delay grows exponentially up to `POLL_BACKOFF_MAX_MS` — capping log
+   * noise and giving the connection time to recycle before we retry.
+   */
+  private nextPollDelayMs(): number {
+    const cadence = this.pollIntervalForCurrent();
+    if (cadence <= 0) {
+      return 0;
+    }
+    if (this.consecutiveFailures === 0) {
+      return cadence;
+    }
+    // Cap the exponent before doing 2 ** n to avoid Infinity for runaway counts.
+    const exp = Math.min(this.consecutiveFailures - 1, 30);
+    const backoff = Math.min(cadence * 2 ** exp, POLL_BACKOFF_MAX_MS);
+    return Math.max(backoff, cadence);
+  }
+
   private scheduleNextPoll(): void {
     if (this.stopped) {
       return;
@@ -288,7 +318,7 @@ export class GarageOrchestrator {
     if (!this.cfg.stateCommand || !this.cfg.stateParser) {
       return;
     }
-    const interval = this.pollIntervalForCurrent();
+    const interval = this.nextPollDelayMs();
     if (interval <= 0) {
       // No cadence applies to the current state; pause polling until the next transition.
       return;
@@ -317,6 +347,10 @@ export class GarageOrchestrator {
     }
     try {
       const result = await this.cfg.runner.run(this.cfg.stateCommand);
+      // SSH succeeded — reset the backoff counter even if parsing fails below.
+      // A parse miss is a different problem class (script output drifted) and
+      // shouldn't keep the connection in slow-poll mode.
+      this.consecutiveFailures = 0;
       const parsed = this.cfg.stateParser.parse(result.stdout);
       if (parsed === null) {
         this.cfg.logger.warn('state poll: unrecognised output', { stdout: truncate(result.stdout, 256) });
@@ -325,7 +359,11 @@ export class GarageOrchestrator {
       this.reconcile(parsed);
       this.checkAutoCloseWatchdog(parsed);
     } catch (err) {
-      this.cfg.logger.warn('state poll failed', { reason: (err as Error).message });
+      this.consecutiveFailures += 1;
+      this.cfg.logger.warn('state poll failed', {
+        reason: (err as Error).message,
+        consecutiveFailures: this.consecutiveFailures,
+      });
     }
   }
 

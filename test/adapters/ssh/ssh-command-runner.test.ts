@@ -5,11 +5,14 @@ import {
   CommandRunnerConnectError,
   CommandRunnerNonZeroExitError,
   CommandRunnerTimeoutError,
+  CommandRunnerTransportError,
 } from '../../../src/domain/command/errors.js';
 import { FakeLogger } from '../../support/fake-logger.js';
 
 class FakeChannel extends EventEmitter {
   public readonly stderr = new EventEmitter();
+  public closeCalls = 0;
+  public signalCalls: string[] = [];
   emitData(data: string) {
     this.emit('data', Buffer.from(data));
   }
@@ -19,6 +22,12 @@ class FakeChannel extends EventEmitter {
   finish(exitCode: number) {
     this.emit('exit', exitCode);
     this.emit('close');
+  }
+  close() {
+    this.closeCalls++;
+  }
+  signal(name: string) {
+    this.signalCalls.push(name);
   }
 }
 
@@ -49,6 +58,9 @@ class FakeClient extends EventEmitter {
   }
   prepareChannel(channel: FakeChannel) {
     this.nextChannel = channel;
+  }
+  queueExecError(err: Error) {
+    this.nextExecError = err;
   }
   triggerReady() {
     this.emit('ready');
@@ -226,6 +238,136 @@ describe('SshCommandRunner', () => {
     const result = await p2;
     expect(result.stdout).toBe('again\n');
     expect(client.connectCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('channel cleanup on timeout', () => {
+    // Without these, a timed-out channel keeps consuming a session slot on the
+    // remote (sshd MaxSessions defaults to 10). After enough leaks every new
+    // exec on the persistent connection comes back as
+    // `(SSH) Channel open failure: open failed`.
+
+    it('signals KILL and closes the channel when the per-command timeout fires', async () => {
+      const runner = build();
+      const channel = new FakeChannel();
+      client.prepareChannel(channel);
+      const cp = runner.connect();
+      setImmediate(() => client.triggerReady());
+      await vi.runAllTimersAsync();
+      await cp;
+
+      const rp = runner.run({ command: 'sleep 99', timeoutMs: 100 });
+      const assertion = expect(rp).rejects.toBeInstanceOf(CommandRunnerTimeoutError);
+      // Drain run()'s connect await + the exec setImmediate so the callback
+      // captures the channel before the timeout fires.
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(100);
+      await assertion;
+
+      expect(channel.signalCalls).toContain('KILL');
+      expect(channel.closeCalls).toBeGreaterThan(0);
+    });
+
+    it('does not crash if the timeout fires before the exec callback ran', async () => {
+      // Edge case: server is so overloaded that exec never even calls back.
+      // We can't close a channel we never received, but we still must reject
+      // the run cleanly.
+      const slowClient = new (class extends EventEmitter {
+        public connectCalls: unknown[] = [];
+        public ended = false;
+        connect(opts: unknown) {
+          this.connectCalls.push(opts);
+        }
+        end() {
+          this.ended = true;
+          setImmediate(() => this.emit('close'));
+        }
+        // Never invoke the callback.
+        exec(_cmd: string, _cb: () => void) {
+          /* hang */
+        }
+      })();
+      const runner = new SshCommandRunner({
+        logger,
+        clientFactory: () => slowClient as never,
+        sshConfig: {
+          host: '192.0.2.1',
+          port: 22,
+          user: 'pi',
+          auth: { method: 'agent' },
+          connectTimeoutMs: 5000,
+          keepaliveIntervalMs: 0,
+          idleDisconnectMs: 0,
+        },
+      });
+      const cp = runner.connect();
+      setImmediate(() => slowClient.emit('ready'));
+      await vi.runAllTimersAsync();
+      await cp;
+
+      const rp = runner.run({ command: 'sleep 99', timeoutMs: 50 });
+      const assertion = expect(rp).rejects.toBeInstanceOf(CommandRunnerTimeoutError);
+      await vi.advanceTimersByTimeAsync(50);
+      await assertion;
+    });
+  });
+
+  describe('client recycle on exec callback error', () => {
+    // When client.exec callbacks back with an error (eg. server refused to
+    // open the channel because MaxSessions is exhausted), the persistent SSH
+    // connection is in an unrecoverable state — every subsequent exec on it
+    // hits the same condition. Drop the connection so the next run reconnects.
+
+    it('drops the SSH client when client.exec returns an error so the next run reconnects', async () => {
+      const runner = build();
+      const cp = runner.connect();
+      setImmediate(() => client.triggerReady());
+      await vi.runAllTimersAsync();
+      await cp;
+      expect(client.connectCalls.length).toBe(1);
+
+      // First run: exec callback fires with a channel-open-failure error.
+      client.queueExecError(new Error('(SSH) Channel open failure: open failed'));
+      const failingRun = runner.run({ command: 'state', timeoutMs: 1000 });
+      const failingAssertion = expect(failingRun).rejects.toBeInstanceOf(CommandRunnerTransportError);
+      await vi.advanceTimersByTimeAsync(0);
+      await failingAssertion;
+      // Drain the synchronous client.end() → setImmediate('close') so
+      // attachLifecycleListeners can clear stale state.
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Second run: should reconnect (call client.connect again) and complete.
+      const channel = new FakeChannel();
+      client.prepareChannel(channel);
+      const recoveryRun = runner.run({ command: 'echo back', timeoutMs: 1000 });
+      await vi.advanceTimersByTimeAsync(0);
+      client.triggerReady();
+      await vi.advanceTimersByTimeAsync(0);
+      channel.emitData('back\n');
+      channel.finish(0);
+      const result = await recoveryRun;
+
+      expect(result.stdout).toBe('back\n');
+      expect(client.connectCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('fires onDisconnect listeners so dependents see the recycle as a disconnect', async () => {
+      const runner = build();
+      const reasons: Error[] = [];
+      runner.onDisconnect((r) => reasons.push(r));
+      const cp = runner.connect();
+      setImmediate(() => client.triggerReady());
+      await vi.runAllTimersAsync();
+      await cp;
+
+      client.queueExecError(new Error('(SSH) Channel open failure: open failed'));
+      const failingRun = runner.run({ command: 'state', timeoutMs: 1000 });
+      const failingAssertion = expect(failingRun).rejects.toBeInstanceOf(CommandRunnerTransportError);
+      await vi.advanceTimersByTimeAsync(0);
+      await failingAssertion;
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(reasons.length).toBeGreaterThanOrEqual(1);
+    });
   });
 
   describe('idle disconnect', () => {

@@ -369,6 +369,132 @@ describe('GarageOrchestrator — state poll reconciliation', () => {
     expect(logger.entries.some((e) => e.level === 'warn' && e.message.includes('unrecognised output'))).toBe(true);
     o.stop();
   });
+
+  it('exponentially backs off consecutive poll failures and resets on success', async () => {
+    // The plugin used to spam the log at the configured cadence whenever the
+    // SSH connection was poisoned (eg. MaxSessions exhausted on the remote).
+    // Backoff caps the noise: each failure doubles the wait, with a hard cap.
+    runner.setDefault('open', ok());
+    runner.setDefault('close', ok());
+    runner.setDefault('state', fail(new CommandRunnerTimeoutError(1000)));
+
+    const o = new GarageOrchestrator({
+      runner,
+      clock,
+      logger,
+      onChange: (s) => states.push(s),
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 10000,
+        closeTravelTimeMs: 10000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 1000,
+      },
+      initialState: DoorState.Closed,
+    });
+    o.start();
+    await new Promise((r) => setImmediate(r));
+    const polls0 = runner.invocations.filter((i) => i.command === 'state').length;
+
+    // After the 1st failure backoff = base = 1000ms. Advance 999ms → no poll.
+    clock.advance(999);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(polls0);
+    // 1ms more → poll fires, fails. Backoff doubles to 2000ms.
+    clock.advance(1);
+    await new Promise((r) => setImmediate(r));
+    const polls1 = runner.invocations.filter((i) => i.command === 'state').length;
+    expect(polls1).toBe(polls0 + 1);
+
+    // After 2nd failure: 1999ms is not enough.
+    clock.advance(1999);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(polls1);
+    clock.advance(1);
+    await new Promise((r) => setImmediate(r));
+    const polls2 = runner.invocations.filter((i) => i.command === 'state').length;
+    expect(polls2).toBe(polls1 + 1);
+
+    // 3rd failure: backoff at 4000ms.
+    clock.advance(3999);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(polls2);
+    clock.advance(1);
+    await new Promise((r) => setImmediate(r));
+    const polls3 = runner.invocations.filter((i) => i.command === 'state').length;
+    expect(polls3).toBe(polls2 + 1);
+
+    // Now make state succeed: backoff should reset to base on the next success.
+    runner.setDefault('state', ok({ stdout: 'CLOSED\n' }));
+    // Backoff is at 8000ms after 3rd failure. Advance to fire the next poll
+    // (which will succeed and reset the counter).
+    clock.advance(8000);
+    await new Promise((r) => setImmediate(r));
+    const pollsAfterSuccess = runner.invocations.filter((i) => i.command === 'state').length;
+    expect(pollsAfterSuccess).toBe(polls3 + 1);
+
+    // Reset confirmed: next failure should wait base (1000ms) again, not 16000ms.
+    runner.setDefault('state', fail(new CommandRunnerTimeoutError(1000)));
+    clock.advance(1000);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(pollsAfterSuccess + 1);
+
+    o.stop();
+  });
+
+  it('caps backoff at 60 seconds regardless of how many failures accumulate', async () => {
+    runner.setDefault('open', ok());
+    runner.setDefault('close', ok());
+    runner.setDefault('state', fail(new CommandRunnerTimeoutError(1000)));
+
+    const o = new GarageOrchestrator({
+      runner,
+      clock,
+      logger,
+      onChange: (s) => states.push(s),
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 10000,
+        closeTravelTimeMs: 10000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 1000,
+      },
+      initialState: DoorState.Closed,
+    });
+    o.start();
+    await new Promise((r) => setImmediate(r));
+
+    // Burn through enough failures to push backoff past the cap.
+    for (let i = 0; i < 8; i++) {
+      clock.advance(60_000);
+      await new Promise((r) => setImmediate(r));
+    }
+    const pollsAtCap = runner.invocations.filter((i) => i.command === 'state').length;
+
+    // After cap, the next poll must arrive within 60s (not 120s, 240s, etc.).
+    clock.advance(59_999);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(pollsAtCap);
+    clock.advance(1);
+    await new Promise((r) => setImmediate(r));
+    expect(runner.invocations.filter((i) => i.command === 'state').length).toBe(pollsAtCap + 1);
+
+    o.stop();
+  });
 });
 
 describe('GarageOrchestrator — transient-state fast polling', () => {
