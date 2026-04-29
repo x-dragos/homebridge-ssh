@@ -2,7 +2,7 @@
   "name": "homebridge-ssh-platform",
   "displayName": "Homebridge SSH",
   "type": "module",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Expose remote shell scripts as native HomeKit accessories via SSH (switches and garage door openers).",
   "author": "Dragos Burciu",
   "license": "Apache-2.0",

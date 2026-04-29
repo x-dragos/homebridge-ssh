@@ -696,3 +696,122 @@ describe('GarageOrchestrator — auto-close watchdog', () => {
     o.stop();
   });
 });
+
+describe('GarageOrchestrator — poll concurrency', () => {
+  // A real-world bug: if scheduleNextPoll runs while another path has already
+  // set pollHandle (eg. deferPollAfterCommand from a user-driven setTarget,
+  // or rescheduleNextPoll from a watchdog poll's reconcile), the previous
+  // handle was overwritten without being cancelled — leaking a parallel poll
+  // chain. After enough cycles you get N concurrent pollOnces all timing out
+  // every cycle. The orchestrator must serialise polls and never leak.
+
+  // Minimal CommandRunner that returns deferred promises so the test can hold
+  // a poll "in flight" while triggering other paths.
+  class DeferredRunner {
+    public invocations: { command: string }[] = [];
+    public connectCount = 0;
+    public disconnectCount = 0;
+    private deferreds = new Map<
+      string,
+      Array<{
+        resolve: (v: { stdout: string; stderr: string; exitCode: number; durationMs: number }) => void;
+        reject: (e: Error) => void;
+      }>
+    >();
+
+    async connect(): Promise<void> {
+      this.connectCount++;
+    }
+    async disconnect(): Promise<void> {
+      this.disconnectCount++;
+    }
+    onDisconnect(): () => void {
+      return () => undefined;
+    }
+    run(spec: { command: string }): Promise<{ stdout: string; stderr: string; exitCode: number; durationMs: number }> {
+      this.invocations.push(spec);
+      const key = spec.command;
+      return new Promise((resolve, reject) => {
+        const list = this.deferreds.get(key) ?? [];
+        list.push({ resolve, reject });
+        this.deferreds.set(key, list);
+      });
+    }
+    resolveNext(command: string, stdout = ''): void {
+      const list = this.deferreds.get(command);
+      if (!list || list.length === 0) {
+        throw new Error(`no pending ${command}`);
+      }
+      const next = list.shift()!;
+      next.resolve({ stdout, stderr: '', exitCode: 0, durationMs: 1 });
+    }
+    pendingCount(command: string): number {
+      return this.deferreds.get(command)?.length ?? 0;
+    }
+  }
+
+  it('does not run two state polls in parallel even when setTarget interleaves with an in-flight poll', async () => {
+    const runner = new DeferredRunner();
+    const clock = new FakeClock();
+    const logger = new FakeLogger();
+    const o = new GarageOrchestrator({
+      runner: runner as never,
+      clock,
+      logger,
+      onChange: () => {},
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      stateCommand: { command: 'state', timeoutMs: 1000 },
+      stateParser: new GarageStateParser({
+        open: { match: 'OPEN', mode: 'exact' },
+        closed: { match: 'CLOSED', mode: 'exact' },
+        opening: { match: 'OPENING', mode: 'exact' },
+        closing: { match: 'CLOSING', mode: 'exact' },
+      }),
+      timing: {
+        openTravelTimeMs: 1000,
+        closeTravelTimeMs: 1000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 5000,
+        transientPollIntervalMs: 1000,
+        postCommandPollDelayMs: 5000,
+      },
+      initialState: DoorState.Closed,
+    });
+
+    o.start();
+    await new Promise((r) => setImmediate(r));
+    // Initial poll is in flight, awaiting the deferred state response.
+    expect(runner.pendingCount('state')).toBe(1);
+
+    // While the initial poll is still in flight, the user opens the door.
+    // requestOpen issues the open command and on completion calls
+    // deferPollAfterCommand which schedules a new pollHandle.
+    const setPromise = o.setTarget('open');
+    await new Promise((r) => setImmediate(r));
+    expect(runner.pendingCount('open')).toBe(1);
+    runner.resolveNext('open');
+    await setPromise;
+    // A poll is now scheduled by deferPollAfterCommand.
+
+    // Now resolve the initial state poll. Its .finally will call
+    // scheduleNextPoll. With the bug, that overwrites the deferred handle
+    // without cancelling the timer behind it — leaking a parallel chain.
+    runner.resolveNext('state', 'OPENING\n');
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    // Advance the clock past the longest plausible scheduled delay so any
+    // leaked timer has a chance to fire. With the fix, exactly one poll
+    // fires (or none, depending on which delay won the schedule). With the
+    // bug, two polls fire in parallel — pendingCount('state') becomes 2.
+    clock.advance(10_000);
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    expect(runner.pendingCount('state')).toBeLessThanOrEqual(1);
+
+    o.stop();
+  });
+});

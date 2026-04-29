@@ -81,6 +81,13 @@ export class GarageOrchestrator {
    * successful state command.
    */
   private consecutiveFailures = 0;
+  /**
+   * Serialises pollOnce. If a poll is already in flight when another is
+   * triggered (eg. the auto-close watchdog poll firing while the regular
+   * loop is mid-call), the second call is a no-op. Stops parallel polls
+   * from piling up against a slow remote and spamming the log on timeout.
+   */
+  private pollInFlight = false;
 
   constructor(private readonly cfg: GarageOrchestratorConfig) {
     this.currentState = cfg.initialState ?? DoorState.Closed;
@@ -318,6 +325,16 @@ export class GarageOrchestrator {
     if (!this.cfg.stateCommand || !this.cfg.stateParser) {
       return;
     }
+    // Always cancel an existing handle before scheduling. Without this, any
+    // path that sets pollHandle while a pollOnce is in flight (eg. user
+    // setTarget calling deferPollAfterCommand, or watchdog poll triggering
+    // reconcile) leaks the timer it set: the in-flight pollOnce's .finally
+    // overwrites this.pollHandle but the prior timer keeps firing on its
+    // own, growing the parallel chain count by one each cycle.
+    if (this.pollHandle) {
+      this.cfg.clock.clearTimeout(this.pollHandle);
+      this.pollHandle = null;
+    }
     const interval = this.nextPollDelayMs();
     if (interval <= 0) {
       // No cadence applies to the current state; pause polling until the next transition.
@@ -345,6 +362,14 @@ export class GarageOrchestrator {
     if (!this.cfg.stateCommand || !this.cfg.stateParser) {
       return;
     }
+    // Defense-in-depth against any code path that double-fires pollOnce.
+    // The scheduleNextPoll cancel-before-schedule guard prevents the main
+    // chain from leaking, but watchdog polls and future paths could still
+    // overlap; a slow remote plus 4s timeouts would amplify noise quickly.
+    if (this.pollInFlight) {
+      return;
+    }
+    this.pollInFlight = true;
     try {
       const result = await this.cfg.runner.run(this.cfg.stateCommand);
       // SSH succeeded — reset the backoff counter even if parsing fails below.
@@ -364,6 +389,8 @@ export class GarageOrchestrator {
         reason: (err as Error).message,
         consecutiveFailures: this.consecutiveFailures,
       });
+    } finally {
+      this.pollInFlight = false;
     }
   }
 
