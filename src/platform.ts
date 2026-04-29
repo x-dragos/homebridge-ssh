@@ -88,6 +88,18 @@ export class HomebridgeSshPlatform implements DynamicPlatformPlugin {
         continue;
       }
       const uuid = this.api.hap.uuid.generate(`${host.id}:${accessory.type}:${accessory.name}`);
+      // Skip duplicate config entries that resolve to the same UUID. Without
+      // this, two HomebridgeGarageAccessory instances would bind to the same
+      // PlatformAccessory, each spawning its own orchestrator + poll loop on
+      // the shared SSH connection.
+      if (successfullyBoundUuids.has(uuid)) {
+        this.logger.warn('duplicate accessory config — skipping', {
+          name: accessory.name,
+          type: accessory.type,
+          uuid,
+        });
+        continue;
+      }
       const cached = this.accessories.get(uuid);
       const platformAccessory = cached ?? new this.api.platformAccessory(accessory.name, uuid);
       platformAccessory.context.config = accessory;

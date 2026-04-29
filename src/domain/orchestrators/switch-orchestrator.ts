@@ -32,6 +32,7 @@ export class SwitchOrchestrator {
   private autoResetHandle: TimerHandle | null = null;
   private pollHandle: TimerHandle | null = null;
   private stopped = false;
+  private pollInFlight = false;
   private readonly polling: PollingConfig | null;
 
   constructor(private readonly cfg: SwitchOrchestratorConfig) {
@@ -141,6 +142,13 @@ export class SwitchOrchestrator {
     if (this.stopped || !this.polling) {
       return;
     }
+    // Cancel any existing handle before assigning a new one — defensive
+    // guard against double-scheduling if scheduleNextPoll is ever called
+    // from outside the linear chain (eg. a future setOn-driven path).
+    if (this.pollHandle) {
+      this.cfg.clock.clearTimeout(this.pollHandle);
+      this.pollHandle = null;
+    }
     this.pollHandle = this.cfg.clock.setTimeout(() => {
       this.pollHandle = null;
       void this.pollOnce().finally(() => this.scheduleNextPoll());
@@ -151,12 +159,18 @@ export class SwitchOrchestrator {
     if (!this.polling) {
       return;
     }
+    if (this.pollInFlight) {
+      return;
+    }
+    this.pollInFlight = true;
     try {
       const result = await this.cfg.runner.run(this.polling.command);
       const parsed = this.polling.parser.parse(result.stdout);
       this.updateState(parsed);
     } catch (err) {
       this.logCommandFailure('state', err);
+    } finally {
+      this.pollInFlight = false;
     }
   }
 

@@ -814,4 +814,67 @@ describe('GarageOrchestrator — poll concurrency', () => {
 
     o.stop();
   });
+
+  it('rapid open-then-close while both commands are in flight does not leak a settle timer', async () => {
+    // If the user spam-taps Open then Close (each routed through HomeKit's
+    // onSet, both arriving while the open command is still running on the
+    // remote), both paths run cancelMotionTimers BEFORE either has scheduled
+    // a settle. When both commands later resolve and each scheduleSettle
+    // assigns this.settleHandle without cancelling the existing one, the
+    // first scheduled settle is leaked — its timer still fires, transitioning
+    // the door to the OLD target after the new target's settle has run.
+    const runner = new DeferredRunner();
+    const clock = new FakeClock();
+    const logger = new FakeLogger();
+    const observed: { current: DoorState; target: 'open' | 'closed' }[] = [];
+    const o = new GarageOrchestrator({
+      runner: runner as never,
+      clock,
+      logger,
+      onChange: (current, target) => observed.push({ current, target }),
+      openCommand: { command: 'open', timeoutMs: 1000 },
+      closeCommand: { command: 'close', timeoutMs: 1000 },
+      timing: {
+        openTravelTimeMs: 5000,
+        closeTravelTimeMs: 5000,
+        autoCloseTimeoutMs: 0,
+        autoCloseMode: 'execute',
+        statePollIntervalMs: 0,
+      },
+      initialState: DoorState.Closed,
+    });
+
+    // Tap Open. requestOpen issues 'open' and awaits.
+    const openPromise = o.setTarget('open');
+    await new Promise((r) => setImmediate(r));
+    expect(runner.pendingCount('open')).toBe(1);
+
+    // Tap Close while 'open' is still in flight. requestClose runs
+    // cancelMotionTimers (nothing to cancel — no settleHandle yet),
+    // transitions to Closing, issues 'close' and awaits.
+    const closePromise = o.setTarget('closed');
+    await new Promise((r) => setImmediate(r));
+    expect(runner.pendingCount('close')).toBe(1);
+
+    // Resolve 'open' first — its scheduleSettle stores a handle to
+    // transition to Open at +5000ms.
+    runner.resolveNext('open');
+    await openPromise;
+
+    // Resolve 'close' — its scheduleSettle should REPLACE the prior
+    // settle (cancel-first). Without that, the prior settle leaks.
+    runner.resolveNext('close');
+    await closePromise;
+
+    // Travel time elapses. Only ONE final transition should be observed
+    // (to Closed). With the leak, we'd see Open then Closed.
+    clock.advance(5000);
+
+    const finalTransitions = observed.filter((e) => e.current === DoorState.Open || e.current === DoorState.Closed);
+    expect(finalTransitions).toHaveLength(1);
+    expect(finalTransitions[0]!.current).toBe(DoorState.Closed);
+    expect(o.current()).toBe(DoorState.Closed);
+
+    o.stop();
+  });
 });

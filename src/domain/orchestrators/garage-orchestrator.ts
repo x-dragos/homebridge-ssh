@@ -88,6 +88,8 @@ export class GarageOrchestrator {
    * from piling up against a slow remote and spamming the log on timeout.
    */
   private pollInFlight = false;
+  /** Watchdog poll timer (one-shot, scheduled per auto-close cycle). */
+  private watchdogPollHandle: TimerHandle | null = null;
 
   constructor(private readonly cfg: GarageOrchestratorConfig) {
     this.currentState = cfg.initialState ?? DoorState.Closed;
@@ -232,6 +234,15 @@ export class GarageOrchestrator {
       after?.();
       return;
     }
+    // Cancel any existing settle before assigning a new one. Two requestOpen/
+    // requestClose calls can interleave (rapid HomeKit taps) and both reach
+    // their scheduleSettle after their cancelMotionTimers ran — without a
+    // cancel here the first settle's timer is leaked and fires alongside
+    // the new one, causing the door state to oscillate.
+    if (this.settleHandle) {
+      this.cfg.clock.clearTimeout(this.settleHandle);
+      this.settleHandle = null;
+    }
     this.settleHandle = this.cfg.clock.setTimeout(() => {
       this.settleHandle = null;
       this.transitionTo(finalState);
@@ -240,6 +251,10 @@ export class GarageOrchestrator {
   }
 
   private scheduleAutoClose(): void {
+    if (this.autoCloseHandle) {
+      this.cfg.clock.clearTimeout(this.autoCloseHandle);
+      this.autoCloseHandle = null;
+    }
     this.autoCloseHandle = this.cfg.clock.setTimeout(() => {
       this.autoCloseHandle = null;
       this.autoCloseFiredAt = this.cfg.clock.now();
@@ -259,6 +274,10 @@ export class GarageOrchestrator {
         this.transitionTo(DoorState.Closed);
         this.lastStable = 'closed';
       } else {
+        if (this.autoCloseSettleHandle) {
+          this.cfg.clock.clearTimeout(this.autoCloseSettleHandle);
+          this.autoCloseSettleHandle = null;
+        }
         this.autoCloseSettleHandle = this.cfg.clock.setTimeout(() => {
           this.autoCloseSettleHandle = null;
           this.transitionTo(DoorState.Closed);
@@ -279,8 +298,13 @@ export class GarageOrchestrator {
     if (!this.cfg.stateCommand || !this.cfg.stateParser) {
       return;
     }
+    if (this.watchdogPollHandle) {
+      this.cfg.clock.clearTimeout(this.watchdogPollHandle);
+      this.watchdogPollHandle = null;
+    }
     const delayMs = Math.max(this.cfg.timing.closeTravelTimeMs, 1000);
-    this.cfg.clock.setTimeout(() => {
+    this.watchdogPollHandle = this.cfg.clock.setTimeout(() => {
+      this.watchdogPollHandle = null;
       if (this.stopped || this.autoCloseFiredAt === null) {
         return;
       }
@@ -467,6 +491,10 @@ export class GarageOrchestrator {
     if (this.pollHandle) {
       this.cfg.clock.clearTimeout(this.pollHandle);
       this.pollHandle = null;
+    }
+    if (this.watchdogPollHandle) {
+      this.cfg.clock.clearTimeout(this.watchdogPollHandle);
+      this.watchdogPollHandle = null;
     }
   }
 
